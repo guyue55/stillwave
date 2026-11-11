@@ -1,0 +1,145 @@
+/* ==========================================================================
+ * 静澜 Stillwave · styles/tokens.css
+ * 设计令牌：配色 / 间距 / 字号 / 动效时长 / 亮度三档 / reduced-motion / 焦点环
+ * 纯 CSS，无外部字体、无图片、无 CDN。
+ * ========================================================================== */
+
+:root {
+  /* —— 配色（PRD §5.5，深色低刺激，低饱和青灰主色，禁用红色告警） —— */
+  --c-bg: #0e1418;
+  --c-bg-soft: #141c22;
+  --c-surface: #172128;
+  --c-surface-2: #1c272e;
+  --c-border: #2b3a40;
+  --c-primary: #7fa8a0;
+  --c-primary-soft: #9bc2ba;
+  --c-text: #e6edea;
+  --c-text-2: #8a9a96;
+  --c-text-3: #6d807c;
+  --c-online: #7fa8a0;
+  --c-backup: #b79b6e;
+  --c-synth: #8093a0;
+  --c-refreshing: #9bb3ae;
+
+  /* —— 排版 —— */
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
+  --fz-body: 15px;
+  --fz-small: 13px;
+  --fz-title: 22px;
+  --fz-brand: 18px;
+  --lh: 1.7;
+  --ls: 0.02em;
+
+  /* —— 间距与圆角 —— */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --touch: 44px;
+
+  /* —— 动效：所有过渡 ≥600ms、缓动 ease-in-out —— */
+  --dur: 700ms;
+  --dur-fast: 600ms;
+  --dur-toast: 3500ms;
+  --ease: ease-in-out;
+  --glow-period: 14s;
+  --breath-4-4: 8s;
+  --breath-4-7-8: 19s;
+
+  /* —— 亮度乘数（由 <html data-brightness> 覆盖，仅改明度不改布局） —— */
+  --fg-alpha: 1;
+  --decor-alpha: 1;
+  --bg-shift: 0;
+}
+
+/* —— 亮度三档：常规 / 暗 / 极暗熄屏（AD-17） —— */
+html[data-brightness="normal"] {
+  --c-bg: #141c22;
+  --c-bg-soft: #1a242b;
+  --fg-alpha: 1;
+  --decor-alpha: 1;
+  --bg-shift: 0;
+}
+
+html[data-brightness="dark"] {
+  --c-bg: #0e1418;
+  --c-bg-soft: #141c22;
+  --fg-alpha: 0.94;
+  --decor-alpha: 0.72;
+  --bg-shift: 0;
+}
+
+html[data-brightness="extreme"] {
+  /* 背景降至近黑；正文仍保持 ≥4.5:1 对比度，仅装饰层降透明 */
+  --c-bg: #05080a;
+  --c-bg-soft: #080d10;
+  --c-surface: #0b1114;
+  --c-surface-2: #0e1518;
+  --c-border: #1b262a;
+  --fg-alpha: 0.88;
+  --decor-alpha: 0.14;
+  --bg-shift: 0;
+}
+
+/* —— 减少动效：全部动画时长归零，用静态状态替代（PRD §5.1 / NFR-06） —— */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+    --dur-fast: 0ms;
+    --dur-toast: 0ms;
+    --glow-period: 0s;
+    --breath-4-4: 0s;
+    --breath-4-7-8: 0s;
+  }
+  *, *::before, *::after {
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* —— 焦点环：清晰但低刺激（NFR-06） —— */
+:focus-visible {
+  outline: 2px solid var(--c-primary-soft);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* 基础重置（布局细节在 app.css） */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  font-size: var(--fz-body);
+  line-height: var(--lh);
+  letter-spacing: var(--ls);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+/* 视觉隐藏但读屏可读 */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# QA 产物（本地生成，不入库）
+qa/results/
+qa/screenshots/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 日志与本地临时文件
+*.log
+.env
+.env.*
+*.tmp
+/tmp/
+
+# 构建 / 依赖产物（本项目零构建，出现即为误提交）
+node_modules/
+dist/
+build/
+package-lock.json
+
+# 说明：.nojekyll、.github/、docs/、data/、tools/ 均为发布所需，勿忽略。

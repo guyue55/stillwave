@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-brightness="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="静澜 Stillwave —— 打开网页就能用、完全免费、无需登录的中文冥想声景站。真实在线音乐，声音永远不会突然消失。">
+  <title>静澜 Stillwave · 让心，慢下来</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles/tokens.css">
+  <link rel="stylesheet" href="./styles/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <!-- ========== A 顶栏：品牌 / 音源状态徽标 / 亮度 / 刷新曲库 ========== -->
+  <header class="topbar" role="banner">
+    <div class="brand">静澜 <span class="brand-en">Stillwave</span></div>
+    <div class="topbar-actions">
+      <div id="badge" class="badge" data-state="synth" role="status" aria-live="polite" aria-atomic="true">
+        <span class="badge-dot" aria-hidden="true"></span>
+        <span id="badge-text">本地合成</span>
+      </div>
+      <button id="btn-brightness" type="button" class="icon-btn" aria-label="切换亮度，当前：暗">
+        <span aria-hidden="true">☾</span><span id="brightness-label">暗</span>
+      </button>
+      <button id="btn-refresh" type="button" class="icon-btn" aria-label="刷新曲库">
+        <span aria-hidden="true">⟳</span><span class="btn-long-text">刷新曲库</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" class="page">
+    <!-- ========== B 场景区：四场景胶囊 Tab + 场景短文案 ========== -->
+    <section class="scene-section" aria-labelledby="scene-heading">
+      <h2 id="scene-heading" class="sr-only">选择冥想场景</h2>
+      <div id="scene-tabs" class="tabs" role="tablist" aria-label="冥想场景">
+        <button type="button" class="tab" id="tab-focus" data-scene="focus" role="tab"
+                aria-selected="true" aria-controls="scene-panel" tabindex="0">学习</button>
+        <button type="button" class="tab" id="tab-sleep" data-scene="sleep" role="tab"
+                aria-selected="false" aria-controls="scene-panel" tabindex="-1">助眠</button>
+        <button type="button" class="tab" id="tab-empty" data-scene="empty" role="tab"
+                aria-selected="false" aria-controls="scene-panel" tabindex="-1">放空</button>
+        <button type="button" class="tab" id="tab-meditation" data-scene="meditation" role="tab"
+                aria-selected="false" aria-controls="scene-panel" tabindex="-1">冥想</button>
+      </div>
+      <p id="scene-caption" class="scene-caption">屏蔽喧嚣，留一处安静</p>
+    </section>
+
+    <!-- ========== C 主视觉区：呼吸圆环 / 意境光晕（单一焦点，不承载操作） ========== -->
+    <section id="scene-panel" class="visual" role="tabpanel" aria-labelledby="tab-focus"
+             aria-label="场景意境与呼吸引导">
+      <div class="glow" aria-hidden="true"></div>
+      <div id="breath-ring" class="breath-ring" hidden aria-hidden="true">
+        <div class="ring-circle"></div>
+      </div>
+      <p id="breath-phase" class="breath-phase" hidden>让心，慢下来</p>
+      <p id="visual-slogan" class="slogan">让心，慢下来</p>
+      <p id="visual-caption" class="caption">学习 · 屏蔽喧嚣，留一处安静</p>
+      <div id="breath-controls" class="breath-controls" hidden role="group" aria-label="呼吸节奏">
+        <button type="button" data-breath="4-4" aria-pressed="true">平衡呼吸 4-4</button>
+        <button type="button" data-breath="4-7-8" aria-pressed="false">4-7-8</button>
+        <button type="button" data-breath="off" aria-pressed="false">关闭</button>
+      </div>
+    </section>
+
+    <!-- ========== D 播放条：主按钮 / 进度 / 换一曲 / 主音量 / 音源信息 ========== -->
+    <section class="player-bar" aria-label="播放控制">
+      <div class="player-head">
+        <div class="now-playing">
+          <span class="label">正在播放</span>
+          <span id="now-title" class="now-title">本地合成声</span>
+        </div>
+        <button id="btn-info" type="button" class="text-btn" aria-expanded="false" aria-controls="info-panel">
+          ⓘ 音源信息 <span aria-hidden="true">▾</span>
+        </button>
+      </div>
+      <div class="play-row">
+        <button id="btn-play" type="button" class="play-btn" aria-pressed="false" aria-label="播放">
+          <span id="play-icon" aria-hidden="true">▶</span>
+        </button>
+        <div class="progress-wrap">
+          <div class="progress-track" aria-hidden="true"><div id="progress-fill" class="progress-fill"></div></div>
+          <span id="progress-time" class="progress-time">00:00 / 00:00</span>
+        </div>
+        <button id="btn-next" type="button" class="ghost-btn">♫ 换一曲</button>
+      </div>
+      <div class="volume-row">
+        <label for="master-volume">主音量</label>
+        <input id="master-volume" type="range" min="0" max="100" step="1" value="45"
+               role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="45" aria-valuetext="45%">
+        <span id="master-volume-value" class="volume-value">45%</span>
+      </div>
+      <!-- 音源信息：许可署名四件套，链接可点击（AD-21：展示层零源标题、零裸 URL） -->
+      <div id="info-panel" class="info-panel" hidden></div>
+    </section>
+
+    <!-- ========== E 混音区：≤3 条声景卡片 + 添加声景 ========== -->
+    <section class="mixer" aria-labelledby="mixer-heading">
+      <div class="section-head">
+        <h2 id="mixer-heading">叠加声景 <span id="mix-count" class="count">(0/3)</span></h2>
+        <button id="btn-add" type="button" class="ghost-btn">+ 添加声景</button>
+      </div>
+      <div id="mix-cards" class="cards"></div>
+      <div id="voice-picker" class="voice-picker" hidden role="group" aria-label="选择要添加的声景"></div>
+      <p id="mix-empty" class="mix-empty">还没有叠加声景，点「添加声景」挑一种。</p>
+    </section>
+
+    <!-- ========== F 定时器区：时长 / 渐弱 / 剩余 / 取消 ========== -->
+    <section class="timer" aria-labelledby="timer-heading">
+      <h2 id="timer-heading">⏱ 睡眠定时器</h2>
+      <div class="preset-row" role="group" aria-label="定时时长">
+        <button type="button" class="preset" data-minutes="15">15 分</button>
+        <button type="button" class="preset" data-minutes="30">30 分</button>
+        <button type="button" class="preset" data-minutes="45">45 分</button>
+        <button type="button" class="preset" data-minutes="60">60 分</button>
+        <button type="button" class="preset" data-minutes="90">90 分</button>
+        <label class="custom-timer" for="custom-minutes">自定义
+          <input id="custom-minutes" type="number" min="1" max="720" step="1" value="30" aria-label="自定义分钟数">
+          分
+        </label>
+        <button id="btn-custom-timer" type="button" class="ghost-btn">设置</button>
+      </div>
+      <div class="preset-row fade-row" role="group" aria-label="渐弱时长">
+        <span class="row-label">渐弱方式</span>
+        <button type="button" class="preset" data-fade="0">关</button>
+        <button type="button" class="preset" data-fade="30">30s</button>
+        <button type="button" class="preset" data-fade="60">60s</button>
+        <button type="button" class="preset" data-fade="120">120s</button>
+      </div>
+      <div class="timer-status">
+        <span id="timer-remaining" class="timer-remaining" aria-live="polite">未设置</span>
+        <button id="btn-cancel-timer" type="button" class="ghost-btn">取消定时</button>
+      </div>
+    </section>
+
+    <!-- ========== G 页脚状态区：音源健康 / 详情面板 / 许可署名 / 价值观 ========== -->
+    <footer class="footer" role="contentinfo">
+      <div class="lib-summary">
+        <span id="lib-status" class="lib-status" aria-live="polite">● 本地合成 · 已内置 30 首验证曲目</span>
+        <button id="btn-details" type="button" class="text-btn" aria-expanded="false" aria-controls="details-panel">
+          详情 <span aria-hidden="true">▾</span>
+        </button>
+      </div>
+      <div id="details-panel" class="details-panel" hidden></div>
+
+      <section class="license-block" aria-labelledby="license-heading">
+        <h2 id="license-heading">音源许可与署名</h2>
+        <p>在线曲目来自 <strong>Internet Archive</strong> 分发的 <strong>Jamendo CC 授权</strong> 氛围音乐与
+          <strong>aporee soundmap</strong> 实地录音，均为知识共享（CC）授权。每条曲目可在「音源信息」或
+          「详情」中展开查看曲名、来源、许可与原始条目链接，点击即可查证。</p>
+        <p>本地合成声景由浏览器 Web Audio 实时生成，零网络依赖、永不失效；本页不上传任何数据。</p>
+      </section>
+
+      <div class="values">
+        <p class="values-text">静澜 · 全免费 · 无需登录 · 不采集数据</p>
+        <div class="values-actions">
+          <button id="btn-drift" type="button" class="ghost-btn" aria-pressed="false">自动漂移：关</button>
+          <button id="btn-clear" type="button" class="ghost-btn">清除本地设置</button>
+        </div>
+        <details class="shortcuts">
+          <summary>快捷键说明</summary>
+          <ul>
+            <li><kbd>空格</kbd> 播放 / 暂停</li>
+            <li><kbd>←</kbd> / <kbd>→</kbd> 主音量 −5% / +5%</li>
+            <li><kbd>1</kbd>~<kbd>4</kbd> 切换学习 / 助眠 / 放空 / 冥想</li>
+            <li>输入框聚焦时不劫持任何按键</li>
+          </ul>
+        </details>
+      </div>
+    </footer>
+  </main>
+
+  <!-- 轻提示：aria-live=polite，3.5s 自动淡出，永不弹窗（P0-14） -->
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+
+  <!-- 经典 defer 脚本按依赖顺序装载（AD-01）：全部相对路径，file:// 可用 -->
+  <script defer src="./js/config.js"></script>
+  <script defer src="./data/audio-sources.js"></script>
+  <script defer src="./js/store.js"></script>
+  <script defer src="./js/sources.js"></script>
+  <script defer src="./js/synth.js"></script>
+  <script defer src="./js/player.js"></script>
+  <script defer src="./js/timer.js"></script>
+  <script defer src="./js/ui.js"></script>
+  <script defer src="./js/main.js"></script>
+</body>
+</html>
