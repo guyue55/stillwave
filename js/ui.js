@@ -21,6 +21,12 @@
 
   var el = {};
   var lastMixSignature = '';
+  var lastLibSignature = '';
+  var libFilter = { scene: 'all', kind: 'all' };
+  var LIB_SCENES = ['all', 'focus', 'sleep', 'empty', 'meditation'];
+  var LIB_SCENE_LABELS = { all: '全部', focus: '学习', sleep: '助眠', empty: '放空', meditation: '冥想' };
+  var LIB_KINDS = ['all', 'music', 'nature'];
+  var LIB_KIND_LABELS = { all: '全部', music: '氛围音乐', nature: '自然录音' };
   var lastBreathKey = '';
   var breathStart = 0;
   var breathTimer = null;
@@ -55,7 +61,8 @@
       'master-volume', 'master-volume-value',
       'mix-count', 'btn-add', 'mix-cards', 'voice-picker', 'mix-empty',
       'custom-minutes', 'btn-custom-timer', 'timer-remaining', 'btn-cancel-timer',
-      'lib-status', 'btn-details', 'details-panel', 'btn-drift', 'btn-clear', 'toast'
+      'lib-status', 'btn-details', 'details-panel', 'btn-library', 'library-panel',
+      'btn-drift', 'btn-clear', 'toast'
     ].forEach(function (id) { el[id] = document.getElementById(id); });
     el.ringCircle = el['breath-ring'] ? el['breath-ring'].querySelector('.ring-circle') : null;
     el.tabs = el['scene-tabs'] ? Array.prototype.slice.call(el['scene-tabs'].querySelectorAll('.tab')) : [];
@@ -211,6 +218,96 @@
     html += '</ul></details>';
 
     el['details-panel'].innerHTML = html;
+  }
+
+  /**
+   * 声音库：可浏览 / 可筛选 / 可点选的曲目清单（P1-09）。
+   * 数据一律来自 sources.getUiTrackList() 的 UiTrack 白名单投影，展示层拿不到
+   * url / 源标题 / bytes / health 等源数据字段（AD-21）。
+   * 用 data-lib-name 而非 data-track-name，避免干扰 A14 对许可清单的 30 条扫描。
+   * 结构签名不变时只原地更新「正在播放」高亮，不重建 DOM，保住键盘焦点。
+   */
+  function renderLibraryPanel() {
+    var panel = el['library-panel'];
+    if (!panel) { return; }
+    var list = sources.getUiTrackList();
+    var visible = list.filter(function (t) {
+      return (libFilter.scene === 'all' || t.scene === libFilter.scene) &&
+        (libFilter.kind === 'all' || t.kind === libFilter.kind);
+    });
+    var signature = libFilter.scene + '|' + libFilter.kind + '|' + list.length;
+    if (signature !== lastLibSignature || !panel.firstChild) {
+      var html = '<h3>声音库 · 挑一首</h3>' +
+        '<p class="lib-hint">共 ' + list.length + ' 首已验证曲目。点选即作为主音源播放，' +
+        '不改变当前场景的定时器、亮度与呼吸设置。</p>';
+      html += '<div class="lib-filters" role="group" aria-label="按场景筛选">' +
+        '<span class="lib-filter-label">场景</span>';
+      LIB_SCENES.forEach(function (key) {
+        html += '<button type="button" class="lib-chip" data-lib-scene="' + key + '"' +
+          ' aria-pressed="' + (libFilter.scene === key ? 'true' : 'false') + '">' +
+          esc(LIB_SCENE_LABELS[key]) + '</button>';
+      });
+      html += '</div><div class="lib-filters" role="group" aria-label="按类型筛选">' +
+        '<span class="lib-filter-label">类型</span>';
+      LIB_KINDS.forEach(function (key) {
+        html += '<button type="button" class="lib-chip" data-lib-kind="' + key + '"' +
+          ' aria-pressed="' + (libFilter.kind === key ? 'true' : 'false') + '">' +
+          esc(LIB_KIND_LABELS[key]) + '</button>';
+      });
+      html += '</div><p class="lib-count" aria-live="polite">显示 ' + visible.length + ' 首</p>';
+      html += '<ul class="lib-list">';
+      visible.forEach(function (t) {
+        html += '<li><button type="button" class="lib-track" data-lib-track="' + esc(t.id) + '"' +
+          ' data-lib-name="' + esc(t.display) + '" aria-pressed="false">' +
+          '<span class="lib-track-name">' + esc(t.display) + '</span>' +
+          '<span class="lib-track-meta">' + esc(LIB_KIND_LABELS[t.kind] || '') +
+          ' · ' + esc(LIB_SCENE_LABELS[t.scene] || '') + '</span></button></li>';
+      });
+      html += '</ul>';
+      if (!visible.length) {
+        html += '<p class="lib-hint">这个组合下暂无曲目，换个筛选条件看看。</p>';
+      }
+      panel.innerHTML = html;
+      lastLibSignature = signature;
+    }
+    /* 高亮原地更新：不重建 DOM，键盘焦点与展开状态保持 */
+    var st = store.getState();
+    var currentId = (st.currentSource && st.currentSource.trackId) ||
+      (st.tracks.length && st.tracks[0] ? st.tracks[0].trackId : null);
+    var buttons = panel.querySelectorAll('[data-lib-track]');
+    for (var i = 0; i < buttons.length; i += 1) {
+      var active = buttons[i].getAttribute('data-lib-track') === currentId;
+      buttons[i].setAttribute('aria-pressed', active ? 'true' : 'false');
+      if (active) { buttons[i].classList.add('is-current'); }
+      else { buttons[i].classList.remove('is-current'); }
+    }
+    var count = panel.querySelector('.lib-count');
+    if (count) { count.textContent = '显示 ' + visible.length + ' 首'; }
+  }
+
+  /** 供契约只读：当前声音库筛选与可见曲目（不含任何源数据字段）。 */
+  function getLibrarySnapshot() {
+    var list = sources.getUiTrackList();
+    var visible = list.filter(function (t) {
+      return (libFilter.scene === 'all' || t.scene === libFilter.scene) &&
+        (libFilter.kind === 'all' || t.kind === libFilter.kind);
+    }).map(function (t) {
+      return { id: t.id, display: t.display, scene: t.scene, kind: t.kind };
+    });
+    return {
+      filter: { scene: libFilter.scene, kind: libFilter.kind },
+      visibleCount: visible.length,
+      total: list.length,
+      tracks: visible
+    };
+  }
+
+  /** 设置声音库筛选（供契约驱动，等价于点击筛选按钮）。 */
+  function setLibraryFilter(scene, kind) {
+    if (LIB_SCENES.indexOf(scene) >= 0) { libFilter.scene = scene; }
+    if (LIB_KINDS.indexOf(kind) >= 0) { libFilter.kind = kind; }
+    lastLibSignature = '';
+    renderLibraryPanel();
   }
 
   /** 混音卡片：仅当结构签名变化才重建 DOM，避免拖动滑块时被重绘打断。 */
@@ -404,6 +501,7 @@
     }
     renderInfoPanel(state);
     renderDetailsPanel();
+    renderLibraryPanel();
   }
 
   /** 每秒更新播放进度（避免高频全量渲染造成长任务）。 */
@@ -452,6 +550,34 @@
     el['btn-refresh'].addEventListener('click', onRefresh);
     el['btn-info'].addEventListener('click', function () { togglePanel(el['btn-info'], el['info-panel']); });
     el['btn-details'].addEventListener('click', function () { togglePanel(el['btn-details'], el['details-panel']); });
+    el['btn-library'].addEventListener('click', function () {
+      togglePanel(el['btn-library'], el['library-panel']);
+    });
+
+    /* 声音库：事件委托（筛选 + 点选曲目），避免逐条绑定 30 个按钮 */
+    el['library-panel'].addEventListener('click', function (ev) {
+      var closest = function (sel) {
+        return ev.target.closest ? ev.target.closest(sel) : null;
+      };
+      var sceneBtn = closest('[data-lib-scene]');
+      if (sceneBtn) {
+        setLibraryFilter(sceneBtn.getAttribute('data-lib-scene'), null);
+        return;
+      }
+      var kindBtn = closest('[data-lib-kind]');
+      if (kindBtn) {
+        setLibraryFilter(null, kindBtn.getAttribute('data-lib-kind'));
+        return;
+      }
+      var trackBtn = closest('[data-lib-track]');
+      if (trackBtn) {
+        var id = trackBtn.getAttribute('data-lib-track');
+        var name = trackBtn.getAttribute('data-lib-name');
+        ensureStarted(function () {
+          if (player.selectTrack(id)) { toast('已切换到「' + name + '」'); }
+        });
+      }
+    });
 
     /* 场景 Tab：点击 + 左右方向键（tablist 键盘模式） */
     el['scene-tabs'].addEventListener('click', function (ev) {
@@ -628,6 +754,8 @@
     toast: toast,
     /* 契约所需的扩展 */
     getUiSnapshot: getUiSnapshot,
-    setBrightness: setBrightness
+    setBrightness: setBrightness,
+    getLibrarySnapshot: getLibrarySnapshot,
+    setLibraryFilter: setLibraryFilter
   };
 })();

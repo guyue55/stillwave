@@ -575,6 +575,369 @@ def group_core(s: Suite, page: Any, ev: Evidence, phase: str,
 
 
 # ---------------------------------------------------------------------------
+# Group 1b · 声音库（P0-1 / P1-09）：可浏览 / 可筛选 / 可点选 / 零泄露
+# ---------------------------------------------------------------------------
+LIB_SNAP_JS = """() => {
+  const panel = document.getElementById('library-panel');
+  const btn = document.getElementById('btn-library');
+  if (!panel) { return { panelExists: false }; }
+  const tracks = Array.from(panel.querySelectorAll('.lib-track'));
+  const st = window.__STILLWAVE__.getState();
+  const main = (st.tracks && st.tracks[0]) ? st.tracks[0] : {};
+  const cs = st.currentSource || {};
+  return {
+    panelExists: true,
+    btnExpanded: btn ? btn.getAttribute('aria-expanded') : null,
+    btnControls: btn ? btn.getAttribute('aria-controls') : null,
+    panelHidden: panel.hidden,
+    panelVisible: !panel.hidden && panel.getBoundingClientRect().height > 0,
+    total: tracks.length,
+    names: tracks.map(e => ((e.querySelector('.lib-track-name') || {}).textContent || '').trim()),
+    ids: tracks.map(e => e.getAttribute('data-lib-track')),
+    libNames: tracks.map(e => e.getAttribute('data-lib-name')),
+    pressed: tracks.filter(e => e.getAttribute('aria-pressed') === 'true')
+                    .map(e => e.getAttribute('data-lib-track')),
+    current: tracks.filter(e => e.classList.contains('is-current'))
+                    .map(e => e.getAttribute('data-lib-track')),
+    sceneChips: Array.from(panel.querySelectorAll('[data-lib-scene]'))
+                     .map(e => [e.getAttribute('data-lib-scene'), e.getAttribute('aria-pressed')]),
+    kindChips: Array.from(panel.querySelectorAll('[data-lib-kind]'))
+                    .map(e => [e.getAttribute('data-lib-kind'), e.getAttribute('aria-pressed')]),
+    countText: (panel.querySelector('.lib-count') || {}).textContent || '',
+    text: panel.innerText || '',
+    trackNameAttrs: panel.querySelectorAll('[data-track-name]').length,
+    mainTrackId: (main.trackId === undefined) ? null : main.trackId,
+    csTrackId: (cs.trackId === undefined) ? null : cs.trackId,
+    tier: cs.tier || null,
+    playState: st.playState,
+    degraded: (st.degradedEvents || []).length
+  };
+}"""
+
+
+LIB_CASES = (
+    ("BR-40", "声音库默认收起与零自动播放", "P0-11 / P1-09"),
+    ("BR-41", "声音库 30 首白名单与零泄露", "A13 / A14 / P1-09"),
+    ("BR-42", "声音库筛选计数", "P1-09"),
+    ("BR-43", "声音库空结果组合", "P1-09"),
+    ("BR-44", "声音库快照形状", "A13 / A14"),
+    ("BR-45", "声音库点选与高亮收敛", "P1-09 / A10 / A14"),
+    ("BR-46", "声音库键盘与 a11y", "A5 / A8 / P1-09"),
+)
+
+
+def group_library(s: Suite, browser: Any, base_url: str,
+                  manifest: Dict[str, Any]) -> None:
+    """P0-1 声音库：默认收起、零自动播放、30 首白名单、筛选、点选与高亮收敛。"""
+    env = "Chrome / http 根路径 / 1440px / 声音库"
+    tracks = manifest.get("tracks", [])
+    displays = {t.get("display", "") for t in tracks}
+    originals = [t.get("originalTitle", "") for t in tracks
+                 if t.get("originalTitle")]
+    by_scene: Dict[str, int] = {}
+    by_kind: Dict[str, int] = {}
+    for t in tracks:
+        by_scene[t.get("scene", "?")] = by_scene.get(t.get("scene", "?"), 0) + 1
+        by_kind[t.get("kind", "?")] = by_kind.get(t.get("kind", "?"), 0) + 1
+    expect_scene = {"focus": 6, "sleep": 3, "empty": 17, "meditation": 4}
+    expect_kind = {"music": 21, "nature": 9}
+
+    ctx, page, ev = new_page(browser, viewport=(1440, 900))
+    try:
+        page.goto(base_url, wait_until="load", timeout=20000)
+        if not wait_contract(page):
+            for cid, name, req in LIB_CASES:
+                s.unverified(cid, name, req, "契约未挂载，声音库用例未执行",
+                             environment=env)
+            return
+
+        # ---- BR-40 默认收起 + 首次手势前零音频请求 ----------------------
+        audio_before = [
+            r["url"] for r in ev.requests
+            if r.get("resourceType") == "media"
+            or urlparse(r.get("url", "")).path.lower().endswith(
+                (".mp3", ".ogg", ".m4a", ".wav"))
+        ]
+        s0 = q(page, LIB_SNAP_JS)
+        s.check("BR-40", "声音库面板默认收起、首次手势前零音频请求（禁自动播放）",
+                "P0-11 / P1-09",
+                bool(s0.get("panelExists")) and s0.get("panelHidden") is True
+                and s0.get("btnExpanded") == "false"
+                and s0.get("btnControls") == "library-panel"
+                and not audio_before and s0.get("playState") == "idle",
+                "panel.hidden=true, aria-expanded=false, aria-controls=library-panel, "
+                "media 请求=0, playState=idle",
+                json.dumps({"panelHidden": s0.get("panelHidden"),
+                            "btnExpanded": s0.get("btnExpanded"),
+                            "btnControls": s0.get("btnControls"),
+                            "audioRequests": len(audio_before),
+                            "playState": s0.get("playState")},
+                           ensure_ascii=False),
+                environment=env)
+
+        # ---- 展开面板 ---------------------------------------------------
+        page.click("#btn-library", timeout=8000)
+        try:
+            page.wait_for_function(
+                "() => !document.getElementById('library-panel').hidden",
+                timeout=5000)
+        except Exception:  # noqa: BLE001
+            pass
+        s1 = q(page, LIB_SNAP_JS)
+
+        # ---- BR-41 30 首白名单 + 零泄露 ---------------------------------
+        leaked_titles = [o for o in originals if o and o in s1.get("text", "")]
+        names = s1.get("names") or []
+        s.check("BR-41", "声音库列出 30 首、曲名与白名单 display 完全一致、零源标题/URL 泄露",
+                "A13 / A14 / P1-09",
+                s1.get("panelVisible") is True and s1.get("total") == 30
+                and set(names) == displays and len(names) == 30
+                and not leaked_titles
+                and "http://" not in s1.get("text", "")
+                and "https://" not in s1.get("text", "")
+                and s1.get("trackNameAttrs") == 0,
+                "30 首 .lib-track；曲名集合 == manifest.display；面板文本无 originalTitle、"
+                "无 http(s)://；0 个 [data-track-name]",
+                json.dumps({"visible": s1.get("panelVisible"),
+                            "total": s1.get("total"),
+                            "missing": sorted(displays - set(names))[:3],
+                            "extra": sorted(set(names) - displays)[:3],
+                            "leakedTitles": leaked_titles[:3],
+                            "hasScheme": ("http://" in s1.get("text", "")
+                                          or "https://" in s1.get("text", "")),
+                            "dataTrackNameNodes": s1.get("trackNameAttrs")},
+                           ensure_ascii=False),
+                environment=env)
+
+        # ---- BR-42 场景 / 类型筛选计数 ----------------------------------
+        scene_obs: Dict[str, Any] = {}
+        for scene in ("focus", "sleep", "empty", "meditation"):
+            page.click('[data-lib-scene="%s"]' % scene, timeout=5000)
+            snap = q(page, LIB_SNAP_JS)
+            pressed = [k for k, v in snap.get("sceneChips") or [] if v == "true"]
+            scene_obs[scene] = {"total": snap.get("total"), "pressed": pressed}
+        page.click('[data-lib-scene="all"]', timeout=5000)
+        kind_obs: Dict[str, Any] = {}
+        for kind in ("music", "nature"):
+            page.click('[data-lib-kind="%s"]' % kind, timeout=5000)
+            snap = q(page, LIB_SNAP_JS)
+            pressed = [k for k, v in snap.get("kindChips") or [] if v == "true"]
+            kind_obs[kind] = {"total": snap.get("total"), "pressed": pressed}
+        page.click('[data-lib-kind="all"]', timeout=5000)
+        scene_ok = all(
+            v["total"] == expect_scene[k] == by_scene.get(k)
+            and v["pressed"] == [k] for k, v in scene_obs.items())
+        kind_ok = all(
+            v["total"] == expect_kind[k] == by_kind.get(k)
+            and v["pressed"] == [k] for k, v in kind_obs.items())
+        s.check("BR-42", "场景筛选 6/3/17/4 与类型筛选 21/9 计数准确、单选 aria-pressed 唯一",
+                "P1-09 / A5",
+                scene_ok and kind_ok,
+                "focus=6 sleep=3 empty=17 meditation=4；music=21 nature=9；"
+                "每种筛选恰一个 aria-pressed=true",
+                json.dumps({"scene": scene_obs, "kind": kind_obs,
+                            "manifestScene": by_scene, "manifestKind": by_kind},
+                           ensure_ascii=False),
+                environment=env)
+
+        # ---- BR-43 空结果组合 -------------------------------------------
+        err_before = len(ev.console_errors)
+        page.click('[data-lib-scene="sleep"]', timeout=5000)
+        page.click('[data-lib-kind="nature"]', timeout=5000)
+        empty = q(page, LIB_SNAP_JS)
+        # 面板仍可用：筛选按钮依然存在且能点回非空组合
+        chips_left = len(empty.get("sceneChips") or []) + len(empty.get("kindChips") or [])
+        page.click('[data-lib-scene="all"]', timeout=5000)
+        after_reset = q(page, LIB_SNAP_JS)
+        page.click('[data-lib-kind="all"]', timeout=5000)
+        s.check("BR-43", "空结果组合（助眠+自然录音=0）零曲目、保留可用筛选与提示、零异常",
+                "P1-09 / A6",
+                empty.get("total") == 0
+                and "0" in (empty.get("countText") or "")
+                and "换个筛选条件" in (empty.get("text") or "")
+                and chips_left >= 8
+                and (after_reset.get("total") or 0) > 0
+                and len(ev.console_errors) == err_before,
+                "sleep+nature 渲染 0 首、计数显示 0、出现空态提示、筛选条仍可切回非空、"
+                "控制台零新增错误",
+                json.dumps({"total": empty.get("total"),
+                            "countText": (empty.get("countText") or "").strip(),
+                            "hasEmptyHint": "换个筛选条件" in (empty.get("text") or ""),
+                            "chipsLeft": chips_left,
+                            "afterResetTotal": after_reset.get("total"),
+                            "consoleErrors": len(ev.console_errors)},
+                           ensure_ascii=False),
+                environment=env)
+
+        # ---- BR-44 契约快照形状 -----------------------------------------
+        snapc = q(page, "() => window.__STILLWAVE__.getLibrarySnapshot()")
+        snap_keys = sorted(snapc.keys()) if isinstance(snapc, dict) else []
+        filter_keys = sorted((snapc.get("filter") or {}).keys())
+        item_keys = sorted({k for t in (snapc.get("tracks") or []) for k in t.keys()})
+        s.check("BR-44", "getLibrarySnapshot() 键形状正确：total=30、tracks 等于可见列表",
+                "A13 / A14 / AD-21",
+                snap_keys == ["filter", "total", "tracks", "visibleCount"]
+                and filter_keys == ["kind", "scene"]
+                and item_keys == ["display", "id", "kind", "scene"]
+                and snapc.get("total") == 30
+                and len(snapc.get("tracks") or []) == snapc.get("visibleCount"),
+                "顶层 {filter,visibleCount,total,tracks}；filter {scene,kind}；"
+                "曲目 {id,display,scene,kind}；total=30；tracks.length=visibleCount",
+                json.dumps({"keys": snap_keys, "filterKeys": filter_keys,
+                            "itemKeys": item_keys, "total": snapc.get("total"),
+                            "visibleCount": snapc.get("visibleCount"),
+                            "tracksLen": len(snapc.get("tracks") or [])},
+                           ensure_ascii=False),
+                environment=env)
+
+        # ---- BR-45 点选：即时高亮 + 收敛自洽 ----------------------------
+        pre = q(page, LIB_SNAP_JS)
+        prev_cs = pre.get("csTrackId")
+        prev_main = pre.get("mainTrackId")
+        base_degraded = pre.get("degraded") or 0
+        scene_of = {t.get("id"): t.get("scene") for t in tracks}
+        pick = None
+        for tid in pre.get("ids") or []:
+            if tid not in (prev_cs, prev_main):
+                pick = tid
+                break
+        if pick is None:
+            s.check("BR-45", "点选曲目后高亮/主槽位/署名一致并收敛自洽", "P1-09",
+                    False, "存在可点选的非当前曲目", "声音库中没有可选曲目",
+                    environment=env)
+        else:
+            page.click('.lib-track[data-lib-track="%s"]' % pick, timeout=8000)
+            try:
+                page.wait_for_function(
+                    "(id) => { var st = window.__STILLWAVE__.getState();"
+                    " return st.tracks && st.tracks[0] && st.tracks[0].trackId === id; }",
+                    arg=pick, timeout=8000)
+            except Exception:  # noqa: BLE001
+                pass
+            mid = q(page, LIB_SNAP_JS)
+            # 收敛：archive.org 单曲首包 1.5~9.6s，3s 预算下有以下三种「自洽」终态：
+            #   (a) bundled-primary  —— 所选曲目在线接入成功
+            #   (b) bundled-backup   —— 主源超时后按 AD-16 切到同场景真实备选（badge=备用音源）
+            #   (c) synth-degraded   —— 全部候选失败，自愈回落 L0 合成层
+            # 判据是「高亮 / 主槽位 / currentSource 三者互指且绝不指向旧曲目」，不硬要 bundled。
+            t0 = time.time()
+            term_kind = None
+            end = mid
+            while time.time() - t0 < 20:
+                end = q(page, LIB_SNAP_JS)
+                tier = end.get("tier")
+                cs = end.get("csTrackId")
+                cur = end.get("current") or []
+                consistent = (
+                    end.get("mainTrackId") == cs and cur == [cs]
+                    and cs is not None and cs != prev_cs)
+                if tier == "bundled" and consistent:
+                    if cs == pick:
+                        term_kind = "bundled-primary"
+                        break
+                    if scene_of.get(cs) and scene_of.get(cs) == scene_of.get(pick):
+                        term_kind = "bundled-backup"
+                        break
+                if (tier == "synth" and cs is None
+                        and end.get("mainTrackId") is None and cur == []
+                        and (end.get("degraded") or 0) > base_degraded):
+                    term_kind = "synth-degraded"
+                    break
+                time.sleep(0.5)
+            immediate_ok = (
+                mid.get("pressed") == [pick] and mid.get("current") == [pick]
+                and mid.get("mainTrackId") == pick
+                and mid.get("csTrackId") in (None, pick)
+                and (prev_cs is None or mid.get("csTrackId") != prev_cs))
+            s.check("BR-45", "点选后即时高亮唯一、主槽位切到目标曲目、旧署名不残留，"
+                     "20s 内收敛为自洽终态（在线 / 同场景备选 / 合成层）",
+                    "P1-09 / A10 / A14",
+                    bool(immediate_ok) and term_kind is not None,
+                    "点击瞬间：仅该按钮 aria-pressed=true 且 .is-current；"
+                    "tracks[0].trackId=picked；currentSource.trackId∈{null,picked} 且≠旧值；"
+                    "20s 内收敛为 (a) bundled & trackId=picked，或 (b) bundled & trackId="
+                    "同场景备选，或 (c) synth & trackId=null & 无高亮；三者均要求高亮/"
+                    "主槽位/currentSource 互指",
+                    json.dumps({"pick": pick, "prevCs": prev_cs, "prevMain": prev_main,
+                                "immediate": {"pressed": mid.get("pressed"),
+                                              "current": mid.get("current"),
+                                              "mainTrackId": mid.get("mainTrackId"),
+                                              "csTrackId": mid.get("csTrackId")},
+                                "immediateOk": bool(immediate_ok),
+                                "terminal": term_kind,
+                                "end": {"tier": end.get("tier"),
+                                        "csTrackId": end.get("csTrackId"),
+                                        "mainTrackId": end.get("mainTrackId"),
+                                        "current": end.get("current"),
+                                        "degraded": end.get("degraded")}},
+                               ensure_ascii=False)[:900],
+                    environment=env)
+            s.artifacts["libraryPick"] = {"pick": pick, "terminal": term_kind,
+                                          "tier": end.get("tier"),
+                                          "csTrackId": end.get("csTrackId")}
+
+        # ---- BR-46 键盘 / a11y / 收起 / 全程控制台清洁 ------------------
+        focus_target = (q(page, LIB_SNAP_JS).get("ids") or [None])[0]
+        focus_ok = False
+        if focus_target:
+            focus_ok = bool(q(page, """(id) => {
+              const btn = document.querySelector('.lib-track[data-lib-track="' + id + '"]');
+              if (!btn) { return false; }
+              btn.focus();
+              return document.activeElement === btn
+                && document.activeElement.classList.contains('lib-track');
+            }""", focus_target))
+        names_ok = q(page, """() => {
+          const list = Array.from(document.querySelectorAll('#library-panel .lib-track'));
+          return list.length > 0 && list.every(e =>
+            (e.getAttribute('data-lib-name') || '') ===
+            (((e.querySelector('.lib-track-name') || {}).textContent || '').trim()));
+        }""")
+        page.click("#btn-library", timeout=5000)
+        try:
+            page.wait_for_function(
+                "() => document.getElementById('library-panel').hidden",
+                timeout=5000)
+        except Exception:  # noqa: BLE001
+            pass
+        closed = q(page, LIB_SNAP_JS)
+        errs, perrs, herrs = (len(ev.console_errors), len(ev.page_errors),
+                              len(ev.http_errors))
+        s.check("BR-46", "曲目按钮可聚焦、data-lib-name 与可见名一致、"
+                 "再次点击收起面板、全程零 console/page/HTTP 错误",
+                "A5 / A8 / A6 / P1-09",
+                focus_ok and bool(names_ok)
+                and closed.get("panelHidden") is True
+                and closed.get("btnExpanded") == "false"
+                and errs == 0 and perrs == 0 and herrs == 0,
+                "focus 进入 .lib-track；data-lib-name == .lib-track-name；"
+                "收起后 hidden=true & aria-expanded=false；console/pageerror/4xx=0",
+                json.dumps({"focus": focus_ok, "namesMatch": bool(names_ok),
+                            "closedHidden": closed.get("panelHidden"),
+                            "closedExpanded": closed.get("btnExpanded"),
+                            "console": errs, "pageErrors": perrs,
+                            "httpErrors": herrs,
+                            "httpSample": ev.http_errors[:2]},
+                           ensure_ascii=False),
+                environment=env)
+        s.artifacts["libraryEvidence"] = {
+            "consoleErrors": errs, "pageErrors": perrs, "httpErrors": herrs,
+            "count": 30, "displays": len(displays),
+        }
+    except Exception as exc:  # noqa: BLE001
+        # 异常兜底也要保住用例数：未登记过的编号一律记 FAIL，绝不让总数静默缩水
+        done = {c.id for c in s.cases}
+        for cid, name, req in LIB_CASES:
+            if cid in done:
+                continue
+            s.check(cid, name, req, False, "声音库用例无异常执行",
+                    "%s: %s" % (type(exc).__name__, str(exc)[:240]),
+                    environment=env)
+    finally:
+        ctx.close()
+
+
+# ---------------------------------------------------------------------------
 # Group 2 · 三类故障注入（每个用例独立页面，避免相互污染）
 # ---------------------------------------------------------------------------
 def group_faults(s: Suite, browser: Any, base_url: str, phase: str) -> None:
@@ -1294,6 +1657,7 @@ def run(phase: str = "full", with_audio: bool = True,
             finally:
                 ctx.close()
 
+            group_library(s, browsers["chrome"], servers["root"].url(), manifest)
             group_faults(s, browsers["chrome"], servers["root"].url(), phase)
             group_persistence(s, browsers["chrome"], servers["root"].url())
             if with_audio:

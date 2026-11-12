@@ -252,4 +252,39 @@ python3 tools/refresh-sources.py --init-from ../docs/00-verified-tracks.json --a
 
 ---
 
+## 7. 增量：P0-1 声音库（曲目浏览与主动选择）
+
+### 7.1 改动范围
+
+| 文件 | 改动 |
+|---|---|
+| `index.html` | 页脚 `lib-summary` 增加「声音库」按钮（`aria-expanded` / `aria-controls`），新增 `<div id="library-panel" hidden>` |
+| `styles/app.css` | 新增 `.lib-actions` / `.library-panel` / `.lib-hint` / `.lib-filters` / `.lib-filter-label` / `.lib-chip` / `.lib-count` / `.lib-list` / `.lib-track` / `.lib-track-name` / `.lib-track-meta` / `.is-current`，并接入 359 / 768 / 1440 三档与 `prefers-reduced-motion`、极暗档 |
+| `js/ui.js` | 新增 `renderLibraryPanel()`（结构签名不变时只原地更新高亮，保住键盘焦点）、`getLibrarySnapshot()`、`setLibraryFilter()`；事件委托统一处理筛选与点选 |
+| `js/player.js` | 抽出 `switchMainTrack()`，新增 `selectTrack()`；修复两处归属错配（见 7.2） |
+| `js/main.js` | `actions.selectTrack` / `actions.setLibraryFilter` / 常驻 `getLibrarySnapshot()` |
+| `qa/*` | 新增 `ST-25~ST-27` 静态契约、`BR-40~BR-46` 浏览器用例；`--round` 扩展至 4 |
+
+`data/audio-sources.json` / `.js` **零改动**；无新增构建、依赖或网络请求。
+
+### 7.2 两处归属错配缺陷（声音库暴露出的既有问题）
+
+1. **切轨窗口内署名错配**：`switchMainTrack()` 原本只 `patchMainSlot()`，未清 `currentSource`。于是点选新曲目后、在线音源接入前的「合成垫声」窗口内，`renderInfoPanel()` 与 `renderLibraryPanel()` 会优先读到**上一首**的 `trackId`，把旧曲目署名与高亮安在新曲目上。修复：切轨时同步将 `currentSource` 置为 `{trackId:null,url:null,tier:'synth',status:'synth'}`，由 `attachOnline()` / `degradeToSynth()` 各自闭环写回。
+2. **备用音源署名错配**：`resolveCandidates()` 按设计允许回退到「同场景其它已验证曲目」的 URL，但 `attachOnline()` 把 `currentSource.trackId` 写成最初请求的 `currentMainTrackId`。结果是备用音源生效时显示 A 曲之名、播放 B 曲之音频。修复：引入 `attachedTrackId = track ? track.id : currentMainTrackId`，主槽位、`reportSuccess()`、`currentSource.trackId` 三者统一跟随实际在播 URL；`selectTrack()` 的「重复点选」判定也改为比对实际在播曲目。
+
+两处均以真实 Chrome 复现 → 修复 → 复测确认，并由 `BR-45` 作为回归护栏长期覆盖。
+
+### 7.3 实现约束（与既有架构一致）
+
+- 数据只经 `sources.getUiTrackList()` 的 `UiTrack` 白名单投影，展示层拿不到 `url` / `originalTitle` / `bytes` / `health` / `candidates`。
+- 列表使用 `data-lib-name`，**不使用** `data-track-name`，A14 对既有 30 条许可界面的扫描面不受影响。
+- 点选复用「先合成垫声 → 并行升级在线 MP3」链路，首次点选即出声，不自动播放、不留静默空窗。
+- 曲目按钮 `min-height: var(--touch)`（44px），当前项除颜色外另有字重线索（WCAG 1.4.1）。
+
+### 7.4 验收
+
+Round 4 全量回归：101 用例 / 91 正式断言全部通过 / 0 失败 / 10 未验证，`ROUTE: NoOne`；新增 10 条专项断言全绿。详见 `docs/04-qa-report.md` §12。
+
+---
+
 > **交付说明**：本文档为第 3 阶段产物（含 v1.1 增量修复），供 QA 阶段（第 4 阶段）作为测试契约与验证基线。代码位于 `meditation/`，未修改 `docs/01-prd.md`、`docs/02-architecture.md` 及 `00-*` 文档；本次仅增改 `meditation/js/{ui,sources,main,player}.js`、`meditation/index.html`（注释）与本文档。

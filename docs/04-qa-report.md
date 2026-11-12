@@ -10,13 +10,15 @@
 
 | 项 | 结果 |
 |---|---|
-| 正式断言（formal assertions） | **81 / 81 全部通过（100%）** |
+| 正式断言（formal assertions） | **91 / 91 全部通过（100%）** |
 | 失败（failed） | **0** |
 | 未验证（unverified，环境限制，不计入源码失败） | **10** |
-| 总用例 | 91 |
+| 总用例 | 101 |
 | ROUTE | **NoOne**（无需工程/QA 返工；10 项未验证为跨浏览器与本环境时间限制，非源码缺陷） |
 
-**一句话结论**：在干净算力环境下，站点全部 81 条正式验收断言稳定通过，零源码失败；3 个此前在高负载轮次（Round 2）曾出现的失败经独立复核确认为**纯环境性**（机器负载 41.86 导致首屏 7.3s、在线音源升级未在 9s 内完成），在负载回落（≤8）后全部转 PASS；另有 1 个 30 首批量探测的偶发限流在探针加固后稳定 30/30。剩余 10 个未验证项全部是**跨浏览器启动能力**与 **60 分钟长时浸泡**的本环境/时间限制，已在 §6 逐条如实列出，绝未外推或伪造。
+> **口径说明（Round 4）**：上表为 **Round 4（声音库验收轮）** 的全量结果。相较 Round 3 的 91 用例 / 81 正式断言，本轮新增 10 条正式断言（静态 ST-25~ST-27、浏览器 BR-40~BR-46，全部覆盖新增的声音库 P0-1 功能），因此总用例 101、正式断言 91，失败仍为 0，正式通过率保持 100%。Round 4 明细见 §12。
+
+**一句话结论**：在干净算力环境下，站点全部 91 条正式验收断言稳定通过，零源码失败；3 个此前在高负载轮次（Round 2）曾出现的失败经独立复核确认为**纯环境性**（机器负载 41.86 导致首屏 7.3s、在线音源升级未在 9s 内完成），在负载回落（≤8）后全部转 PASS；另有 1 个 30 首批量探测的偶发限流在探针加固后稳定 30/30。剩余 10 个未验证项全部是**跨浏览器启动能力**与 **60 分钟长时浸泡**的本环境/时间限制，已在 §6 逐条如实列出，绝未外推或伪造。Round 4 在 Round 3 基础上把新增的声音库（可浏览/可筛选/可点选）纳入自动化闸门，10 条新断言全部 PASS，且未削弱或改动任何既有用例。
 
 ---
 
@@ -24,7 +26,7 @@
 
 | 闸门 | 验收目标 | 状态 | 关键证据 |
 |---|---|---|---|
-| A1 | 契约挂载、9 个 `defer` 脚本顺序、无 ESM | ✅ PASS | static_contracts 24/24；`node --check` 9/9 |
+| A1 | 契约挂载、9 个 `defer` 脚本顺序、无 ESM | ✅ PASS | static_contracts 27/27（Round 4）；`node --check` 9/9 |
 | A2 | 跨浏览器（Chrome/Firefox/Safari/WebKit） | ⚠️ UNVERIFIED | 仅 Chrome 可启动；Firefox/WebKit 二进制已下载但本环境启动超时；Safari 无 safaridriver |
 | A3 | 音频自愈 ≤3000ms、播放不中断、无弹窗无闪烁 | ✅ PASS | degrade_repeats：3 类故障 × 2 组配置 × 5 次复现，lastDegradeDurationMs 全 ≤2861ms |
 | A4 | ≥30 首在线曲目逐条真实可播（元数据+时长） | ✅ PASS | BR-16：首轮 30/30（探针加固后） |
@@ -53,6 +55,8 @@
 | **合计** | **91** | **81** | **0** | **10** | **正式通过率 100%** |
 
 > Round 3 是「干净算力轮」：env_probe/static_contracts/refresh_script/degrade_repeats 与 Round 2 完全一致（环境无关、确定性），browser 套件在本轮重新实跑。
+>
+> 本节为 **Round 3 的历史留档**（91 用例 / 81 正式断言）。新增声音库断言后的 **Round 4 逐套件结果**（101 用例 / 91 正式断言）见 §12.2。
 
 ---
 
@@ -158,7 +162,7 @@ Round 2 在高负载（load average **41.86 / 41.26 / 42.09**）下出现 3 个�
 > **开源仓库布局说明**：本报告撰写于开发工作区，当时站点文件位于 `meditation/` 子目录。
 > 在已发布的 [guyue55/stillwave](https://github.com/guyue55/stillwave) 仓库中，站点文件已上移到**仓库根目录**，
 > 因此 Pages 直接从 `main` 分支 `/ (root)` 发布，仓库含 `.nojekyll` 跳过 Jekyll，
-> 在线地址为 <https://guyue55.github.io/stillwave/>。两者的站点文件内容完全一致（QA 24/24、7/7 在两种布局下均复跑通过）。
+> 在线地址为 <https://guyue55.github.io/stillwave/>。两者的站点文件内容完全一致（静态契约与刷新脚本套件在两种布局下均复跑通过；Round 4 的声音库断言只依赖相对路径与 DOM 契约，与布局无关）。
 > 下文按开发工作区布局描述，按仓库布局操作时把 `meditation/` 前缀去掉即可。
 
 **目录结构**：站点全部文件位于仓库的 `meditation/` 子目录（15 个文件，开发工作区布局）。
@@ -190,7 +194,89 @@ Round 2 在高负载（load average **41.86 / 41.26 / 42.09**）下出现 3 个�
 | 架构 | `docs/02-architecture.md`（v1.1a） |
 | 实现记录 | `docs/03-implementation.md` |
 | 本验收报告 | `docs/04-qa-report.md` |
-| QA 套件与证据 | `qa/`（9 脚本 + `results/round3/` 数据 + `screenshots/`） |
+| QA 套件与证据 | `qa/`（9 脚本 + `results/round3/`、`results/round4/` 数据 + `screenshots/`） |
 | 曲库动态更新 | `meditation/tools/refresh-sources.py` + `meditation/.github/workflows/refresh-sources.yml` |
 
-**最终 ROUTE：NoOne** —— 全部 81 条正式断言稳定通过，0 源码失败；10 项未验证为跨浏览器与本环境时间限制，已逐条如实披露，无需工程或 QA 返工。
+**最终 ROUTE：NoOne** —— 全部 91 条正式断言（Round 4 口径）稳定通过，0 源码失败；10 项未验证为跨浏览器与本环境时间限制，已逐条如实披露，无需工程或 QA 返工。
+
+---
+
+## 12. Round 4：声音库（P0-1）功能验收
+
+> 触发需求：P0-1「曲目浏览与主动选择」——把原本只能「换一曲」盲听的 30 首曲目，变成可浏览、可按场景/类型筛选、可点选播放的声音库。
+> 本轮 QA 只做一件事：把该功能**契约化**进自动化套件，并跑一次完整回归作为推送前的最终闸门。站点源码（`meditation/**`）本轮**零改动**。
+
+### 12.1 本轮新增的 10 条正式断言
+
+| 用例 | 断言内容 | 判定要点 |
+|---|---|---|
+| ST-25 | HTML 契约 | `#btn-library` 同时带 `aria-expanded="false"` 与 `aria-controls="library-panel"`；`#library-panel` 默认带 `hidden`（默认收起、不预加载） |
+| ST-26 | 样式契约 | `app.css` 定义 `.library-panel` / `.lib-track` / `.lib-chip` / `.is-current`；`.lib-track` 的 `min-height` 取 `var(--touch)`（=44px）；声音库 CSS/JS 区块内 **0 处** `data-track-name`（避免与 A14 许可清单的 30 条扫描锚点混淆） |
+| ST-27 | 白名单投影 | `ui.js` 只输出 `data-lib-name` / `data-lib-track` / `getUiTrackList` 投影，**0 处** `originalTitle`；`main.js` 导出 `getLibrarySnapshot` / `selectTrack` / `setLibraryFilter` |
+| BR-40 | 默认态 + 禁自动播放 | 面板 `hidden=true`、`aria-expanded=false`、`aria-controls=library-panel`；首次手势前 media 请求 0、`playState=idle` |
+| BR-41 | 30 首 + 零泄露 | 恰好 30 个 `.lib-track`；曲名集合与清单 `display` 集合**完全相等**；面板 `innerText` 无任何 `originalTitle`、无 `http://`/`https://`、0 个 `[data-track-name]` 节点 |
+| BR-42 | 筛选计数 | 场景 focus 6 / sleep 3 / empty 17 / meditation 4；类型 music 21 / nature 9；每种筛选恰一个 `aria-pressed="true"` 且与所选一致 |
+| BR-43 | 空结果组合 | 场景=助眠 + 类型=自然录音 → 0 首；计数显示 0；出现空态提示；筛选条仍可点回非空组合；零新增控制台错误 |
+| BR-44 | 快照形状 | `getLibrarySnapshot()` 顶层键恰为 `{filter, visibleCount, total, tracks}`；`filter` 恰为 `{scene, kind}`；每条曲目键恰为 `{id, display, scene, kind}`；`total=30`；`tracks.length === visibleCount` |
+| BR-45 | 点选 + 收敛自洽 | 点击瞬间仅该按钮 `aria-pressed="true"` 且 `.is-current`；`tracks[0].trackId` = 所选 id；`currentSource.trackId ∈ {null, 所选 id}` 且**绝不等于上一首**；20s 内收敛为自洽终态（见 §12.5） |
+| BR-46 | 键盘 / a11y / 收口 | `.lib-track` 可通过 `.focus()` 获得焦点；每个按钮的 `data-lib-name` 与可见曲名逐一相等；再次点击收起面板（`hidden=true` + `aria-expanded=false`）；整组零 console / pageerror / HTTP 4xx-5xx |
+
+### 12.2 Round 4 逐套件结果（`qa/results/round4/summary.json`）
+
+| 套件 | 总用例 | 通过 | 失败 | 未验证 | 耗时 |
+|---|---|---|---|---|---|
+| env_probe | 11 | 6 | 0 | 5 | 10.2s |
+| static_contracts | 27 | 27 | 0 | 0 | 0.2s |
+| refresh_script | 7 | 7 | 0 | 0 | 15.4s |
+| browser | 50 | 45 | 0 | 5 | 114.7s |
+| degrade_repeats | 6 | 6 | 0 | 0 | 81.8s |
+| **合计** | **101** | **91** | **0** | **10** | **100% 正式通过率（91/91）** |
+
+- 10 个 UNVERIFIED 与 Round 3 完全同源、同条目（EP-02.chromium/firefox/webkit、EP-05、EP-06、BR-31 ×4、BR-33），均为跨浏览器启动能力与本环境 60 分钟浸泡限制，未新增、未美化。
+- 本轮 **0 FAIL**，无需任何用例降级、重试豁免或断言放宽；既有用例编号与判据一律未改动（新增编号从 ST-25 / BR-40 起，不冲突）。
+- ST-01 在清理 `__pycache__` / `.pyc` 后的干净树上复跑仍为「实际文件数=15、缺失=[]、违规=[]」。
+- 原始控制台输出归档于 `qa/results/round4_console.log`；逐套件 JSON 与合并结果在 `qa/results/round4/`（`summary.json` 的 `round=4`、`ROUTE=NoOne`）。
+- 本轮 BR-45 实测终态为 `bundled-primary`（`pick=jamendo-002032`，`tier=bundled`、`currentSource.trackId=jamendo-002032`），即所选曲目成功在线接入；另两种自洽终态见 §12.5。
+
+### 12.3 闸门映射（新增断言 → 验收要点）
+
+| 验收要点 | 覆盖用例 |
+|---|---|
+| P0-1 曲目可浏览 / 可筛选 / 可点选 | BR-41 / BR-42 / BR-43 / BR-45 |
+| P0-11 首次手势前零发声（禁自动播放） | BR-40 |
+| A5 触控区 ≥44px、aria 状态可读 | ST-26 / BR-42 / BR-46 |
+| A6 控制台零 error / 零 404 | BR-43 / BR-46 |
+| A13 契约快照字段零冗余 | BR-44 |
+| A14 / AD-21 展示层只吃白名单投影（零 `originalTitle`、零裸 URL） | ST-27 / BR-41 |
+| P1-09 面板结构 / 默认收起 / 可恢复 | ST-25 / ST-26 / BR-40 / BR-46 |
+
+### 12.4 两处 lead 修复的回归护栏
+
+BR-45 同时守护本轮修掉的两个状态一致性缺陷，二者都是「高亮/署名指向上一首」的用户可见错误：
+
+1. **`player.js#switchMainTrack` 清空 `currentSource`**：切换主音源时先摘除旧在线音源、再重建合成垫声。如果在「合成垫声 → 在线升级」窗口内不清空 `currentSource`，`renderInfoPanel` / `renderLibraryPanel` 会读到上一首的 `trackId`，把旧曲的署名与高亮错配到新点选的曲目上。BR-45 的「点击瞬间 `currentSource.trackId ∈ {null, 所选 id}` 且 ≠ 旧值」正是这条修复的断言。
+2. **`player.js#attachOnline` 用 `attachedTrackId`**：`resolveCandidates()` 允许「同场景其它已验证曲目」作为真实备选池，因此备用 URL 可能属于另一首曲目。署名、高亮、健康度必须跟着**实际在播的 URL** 走（`attachedTrackId = track ? track.id : currentMainTrackId`）。BR-45 的终态判据要求「DOM 高亮 == `tracks[0].trackId` == `currentSource.trackId`」三者互指，实际在播是备选曲目时高亮也必须跟着备选曲目，而不是最初请求的 id。
+
+### 12.5 诚实说明：3s 加载预算 vs archive.org 首包时延
+
+BR-45 **不要求**终态必须是 `tier=bundled`（在线）。原因有三：
+
+1. 设计常量 `LOAD_TIMEOUT_MS = 3000` 是首屏「3 秒内必须出声」的硬约束（P0-06），而 archive.org 是第三方公共服务：本轮 BR-16 批量实测单曲完整下载 5.7~9.6s；本轮独立探针（`preload=none` + `play()`）测得三个样本的首包 `canplay` 分别约 **2.5s（jamendo-002032）/ 4.5s（jamendo-131817）/ 1.6s（jamendo-122281）**，抖动极大。
+2. 因此点选一首曲目后，实际可能出现三种**均为设计内**的自洽终态：
+   - **(a) bundled-primary**：所选曲目在线接入成功（本轮 Round 4 实测即此态）；
+   - **(b) bundled-backup**：主源超出预算，按 AD-16 切到**同场景真实备选**曲目，徽标显示「备用音源」；
+   - **(c) synth-degraded**：全部候选失败，自愈回落 L0 合成层（永不静音）。
+   三种终态在开发期的重复实测中**都实际出现过**（同一台机器、同一份代码，仅网络抖动不同）。
+3. BR-45 于是断言「**状态自洽**」而非「必须为 bundled」：无论落到哪一态，`currentSource.trackId` / `tracks[0].trackId` / DOM 高亮三者必须互指，且合成层态必须 `trackId=null` 且不留高亮、并确实记录了一次降级事件。这样既不掩盖真实故障（错配、残留旧曲目、假高亮一律 FAIL），也不会把 archive.org 的网络抖动误判成源码缺陷。
+
+> **需产品侧知悉的 UX 口径**：当所选曲目首包超出 3s 预算时，用户可能听到同场景的**另一首**曲目（徽标为「备用音源」），面板高亮与信息面板会如实跟随实际在播曲目。这是既有自愈设计的必然结果，不是本轮引入的缺陷；若产品要求「点了哪首就必须是哪首」，则需调整 `LOAD_TIMEOUT_MS` 或改为「仅同曲目候选、失败即降级 L0」。本轮 QA 按现状如实断言，不擅自改判。
+
+### 12.6 本轮 QA 变更清单（仅 `qa/*` 与本文档）
+
+| 文件 | 变更 |
+|---|---|
+| `qa/test_static_contracts.py` | 新增 ST-25 / ST-26 / ST-27（HTML、CSS、白名单投影三组静态契约） |
+| `qa/test_browser.py` | 新增 `group_library(s, browser, base_url, manifest)` 与 BR-40~BR-46；在 `run()` 中紧随 `group_core` 之后调用，复用同一页面以控制耗时 |
+| `qa/run_all.py` | `--round` 合法值扩展为 `[1, 2, 3, 4]`，本轮结果归档到 `qa/results/round4/` |
+| `docs/04-qa-report.md` | 结论数字更新为 Round 4 口径，并追加本节 |
+

@@ -10,6 +10,8 @@
 
 同时保持：`file://` 可用、GitHub Pages 子路径可用（本地资源一律 `./` 相对路径）、不使用 ES Modules（`window.SW` 单命名空间 + IIFE + 经典 `defer`）、首屏本地资源 < 300KB。
 
+新增曲目列表类 UI 还必须遵守：只消费 `window.SW.sources.getUiTrackList()` 的 `UiTrack` 白名单投影，绝不渲染 `originalTitle` 或裸 URL，并统一用 `data-lib-name` 风格属性（而非 `data-track-name`），确保 A14 许可署名扫描仍是既有的 30 条曲目界面。
+
 ## 1. 新增一首曲目（最严格的流程）
 
 曲库里的每一条链接都应能回答「你凭什么说它可用」。**禁止凭搜索结果或猜测直接写 URL**。

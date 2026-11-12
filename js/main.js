@@ -255,6 +255,13 @@
         player.nextTrack();
         return Promise.resolve();
       },
+      selectTrack: function (id) {
+        if (store.getState().playState === 'idle') {
+          return player.startFromGesture().then(function () { return player.selectTrack(id); });
+        }
+        return Promise.resolve(player.selectTrack(id));
+      },
+      setLibraryFilter: function (scene, kind) { ui.setLibraryFilter(scene, kind); },
       setMasterVolume: function (v) { player.setMasterVolume(v); },
       addTrack: function (voice) {
         if (store.getState().playState === 'idle') {
@@ -312,6 +319,7 @@
       getState: getDebugState,
       getEventLog: function () { return store.getLog(); },
       getUiSnapshot: function () { return ui.getUiSnapshot(); },
+      getLibrarySnapshot: function () { return ui.getLibrarySnapshot(); },
       getAttribution: function (trackId) { return sources.getAttribution(trackId); },
       getManifestSummary: function () { return sources.getManifestSummary(); },
       /* v1.1 / A13 / A14 新增四个数据层契约入口 */

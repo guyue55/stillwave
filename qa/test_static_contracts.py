@@ -367,6 +367,72 @@ def run(phase: str = "full") -> Suite:
     s.check("ST-24", "页面无 http:// 明文资源引用（零混合内容）", "A6 / S-08",
             not http_refs, "0 处 http:// 资源引用", "命中: %s" % http_refs[:4])
 
+    # ---- ST-25 声音库面板的 HTML 契约（P0-1 / P1-09） -------------------
+    lib_btn = re.search(r'<button[^>]*id="btn-library"[^>]*>', html)
+    lib_panel = re.search(r'<div[^>]*id="library-panel"[^>]*>', html)
+    btn_tag = lib_btn.group(0) if lib_btn else ""
+    panel_tag = lib_panel.group(0) if lib_panel else ""
+    html_lib_ok = (
+        bool(btn_tag)
+        and 'aria-expanded="false"' in btn_tag
+        and 'aria-controls="library-panel"' in btn_tag
+        and bool(panel_tag)
+        and re.search(r'\shidden(?=[\s>/])', panel_tag) is not None
+    )
+    s.check("ST-25", "声音库入口按钮 aria 关联面板且面板默认 hidden 收起",
+            "P1-09 / A5 / P0-11", html_lib_ok,
+            '#btn-library 带 aria-expanded="false" + aria-controls="library-panel"；'
+            '#library-panel 默认 hidden',
+            "btn=%r panel=%r" % (btn_tag[:120], panel_tag[:120]))
+
+    # ---- ST-26 声音库样式契约 + 库内零 data-track-name -------------------
+    # 「库内」= app.css 的声音库区块 + ui.js 的 renderLibraryPanel..renderMixCards 区间；
+    # 许可清单里的 data-track-name 属 A14 的 30 条扫描锚点，不在库内，不能误判。
+    app_css = read_text("styles/app.css")
+    css_start = app_css.find("声音库面板")
+    css_end = app_css.find("/* ---------- 轻提示", css_start)
+    css_lib_block = app_css[css_start:css_end] if css_start >= 0 and css_end > css_start else ""
+    js_start = ui_js.find("function renderLibraryPanel")
+    js_end = ui_js.find("function renderMixCards", js_start)
+    js_lib_block = ui_js[js_start:js_end] if js_start >= 0 and js_end > js_start else ""
+    track_rule = re.search(r"\.lib-track\s*\{[^}]*\}", css_lib_block)
+    track_rule_text = track_rule.group(0) if track_rule else ""
+    css_lib_ok = (
+        ".library-panel" in css_lib_block
+        and ".lib-chip" in css_lib_block
+        and ".lib-track" in css_lib_block
+        and ".is-current" in css_lib_block
+        and "min-height: var(--touch)" in track_rule_text
+        and "--touch: 44px" in css
+        and "data-track-name" not in css_lib_block
+        and "data-track-name" not in js_lib_block
+    )
+    s.check("ST-26", "库面板样式齐全、曲目按钮命中 44px 触控令牌、库内零 data-track-name",
+            "P1-09 / A5 / A14", css_lib_ok,
+            ".library-panel/.lib-track/.lib-chip/.is-current 齐备；.lib-track "
+            "min-height: var(--touch)（--touch: 44px）；库区块 0 处 data-track-name",
+            "样式命中={%s} min-height=%r 库CSS含data-track-name=%s "
+            "库JS含data-track-name=%s"
+            % (",".join(k for k in (".library-panel", ".lib-chip", ".lib-track",
+                                    ".is-current") if k in css_lib_block),
+               "var(--touch)" if "min-height: var(--touch)" in track_rule_text else "缺失",
+               "data-track-name" in css_lib_block,
+               "data-track-name" in js_lib_block))
+
+    # ---- ST-27 声音库只消费白名单投影 + 契约三入口 -----------------------
+    main_need = ("getLibrarySnapshot", "selectTrack", "setLibraryFilter")
+    main_missing = [k for k in main_need if k not in main_js]
+    ui_lib_missing = [k for k in ("data-lib-name", "data-lib-track", "getUiTrackList")
+                      if k not in ui_js]
+    lib_ok = (not main_missing and not ui_lib_missing
+              and "originalTitle" not in ui_js)
+    s.check("ST-27", "声音库仅渲染 UiTrack 白名单投影且契约三入口齐全",
+            "A14 / AD-21 / A13", lib_ok,
+            "ui.js 含 data-lib-name/data-lib-track/getUiTrackList 且 0 处 originalTitle；"
+            "main.js 导出 getLibrarySnapshot/selectTrack/setLibraryFilter",
+            "ui.js 缺失=%s originalTitle=%d；main.js 缺失=%s"
+            % (ui_lib_missing, ui_js.count("originalTitle"), main_missing))
+
     # ---- 记录元数据 -----------------------------------------------------
     s.artifacts["manifest"] = {
         "schema": manifest.get("schema"), "version": manifest.get("version"),

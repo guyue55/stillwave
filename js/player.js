@@ -161,13 +161,17 @@
     synth.rampGain(mediaHandle.trackGain.gain, targetVolume, C.CROSSFADE_MS);
 
     currentMainUrl = url;
-    var displayName = track ? track.display : displayOf(currentMainTrackId);
+    /* resolveCandidates() 允许「同场景其它已验证曲目」作为真实备选池，因此备用
+       URL 可能属于另一首曲目。署名 / 高亮 / 健康度必须跟着「实际在播的 URL」走，
+       不能停留在最初请求的 currentMainTrackId 上（A10 / A14 署名正确性）。 */
+    var attachedTrackId = track ? track.id : currentMainTrackId;
+    var displayName = track ? track.display : displayOf(attachedTrackId);
     patchMainSlot({
       kind: 'audio', voice: null,
-      trackId: track ? track.id : currentMainTrackId,
+      trackId: attachedTrackId,
       url: url, display: displayName
     });
-    sources.reportSuccess(currentMainTrackId, url);
+    sources.reportSuccess(attachedTrackId, url);
 
     var isBackup = !!(ctx && ctx.failedCount > 0);
     store.patch({
@@ -175,7 +179,7 @@
       badge: isBackup ? 'backup' : 'online',
       badgeText: isBackup ? '备用音源' : '在线可用',
       currentSource: {
-        trackId: currentMainTrackId, url: url, tier: 'bundled',
+        trackId: attachedTrackId, url: url, tier: 'bundled',
         status: isBackup ? 'backup' : 'primary'
       }
     });
@@ -609,7 +613,39 @@
     store.emit(E.TRACK_REMOVED, { slot: copySlot(removed) });
   }
 
-  /** 「换一曲」：优先同场景健康度最高的其它曲目。 */
+  /**
+   * 把主音源切到指定曲目：淡出旧轨 → 先重建合成垫声保证无缝 → 并行升级在线音源。
+   * 「换一曲」与「声音库点选」共用此链路，避免两条切换逻辑分叉（P1-09）。
+   */
+  function switchMainTrack(nextId) {
+    if (!started || !graph || !nextId) { return false; }
+    var preset = C.SCENES[store.getState().scene] || C.SCENES.focus;
+    var token = ++mainUpgradeToken;
+    var old = handles['main'];
+    if (old) {
+      try { synth.rampGain(old.trackGain.gain, 0, C.CROSSFADE_MS); } catch (err) { /* 静默 */ }
+      scheduleRelease([old], C.CROSSFADE_MS + 120);
+    }
+    var pad = synth.createVoice(preset.padVoice, graph, {});
+    var s = findSlot('main');
+    var volume = s ? s.volume : 1.0;
+    pad.userVolume = volume;
+    handles['main'] = pad;
+    synth.rampGain(pad.trackGain.gain, volume, 300);
+    patchMainSlot({ kind: 'synth', voice: preset.padVoice, trackId: nextId, url: null, display: displayOf(nextId) });
+    /* 旧在线音源此刻已被摘除。必须同步清空 currentSource，否则在「合成垫声 →
+       在线升级」的窗口内，renderInfoPanel / renderLibraryPanel 会优先读到旧
+       trackId，把上一首的署名与「正在播放」高亮错配到新点选的曲目上（A10 / A14）。
+       升级成功由 attachOnline 写回，全失败由 degradeToSynth 归零，状态闭环。 */
+    store.patch({
+      sourceTier: 'synth', badge: 'synth', badgeText: '本地合成',
+      currentSource: { trackId: null, url: null, tier: 'synth', status: 'synth' }
+    });
+    upgradeMain(nextId, token);
+    return true;
+  }
+
+  /** 「换一曲」：优先同场景的下一首氛围音乐。 */
   function nextTrack() {
     if (!started || !graph) { return; }
     var scene = store.getState().scene;
@@ -620,23 +656,22 @@
     for (var i = 0; i < list.length; i += 1) {
       if (list[i].id === currentMainTrackId) { index = (i + 1) % list.length; break; }
     }
-    var nextId = list[index].id;
-    var token = ++mainUpgradeToken;
-    var old = handles['main'];
-    if (old) {
-      try { synth.rampGain(old.trackGain.gain, 0, C.CROSSFADE_MS); } catch (err) { /* 静默 */ }
-      scheduleRelease([old], C.CROSSFADE_MS + 120);
-    }
-    var preset = C.SCENES[scene] || C.SCENES.focus;
-    var pad = synth.createVoice(preset.padVoice, graph, {});
-    var s = findSlot('main');
-    var volume = s ? s.volume : 1.0;
-    pad.userVolume = volume;
-    handles['main'] = pad;
-    synth.rampGain(pad.trackGain.gain, volume, 300);
-    patchMainSlot({ kind: 'synth', voice: preset.padVoice, trackId: nextId, url: null, display: displayOf(nextId) });
-    store.patch({ sourceTier: 'synth', badge: 'synth', badgeText: '本地合成' });
-    upgradeMain(nextId, token);
+    switchMainTrack(list[index].id);
+  }
+
+  /** 声音库点选：按 id 切换主音源。只接受清单白名单投影里存在的曲目。 */
+  function selectTrack(trackId) {
+    if (!started || !graph) { return false; }
+    var view = sources.getUiTrack(trackId);
+    if (!view || !view.id) { return false; }
+    /* 已是「实际在播」的曲目时不做无谓重建，避免短暂回到合成层。
+       用 currentSource（而非 currentMainTrackId）比对，是因为备用 URL 可能
+       已切到同场景的其它曲目；此时用户再点原曲目不应被误判为重复点选。 */
+    var st = store.getState();
+    var actual = (st.currentSource && st.currentSource.trackId) ||
+      (st.tracks.length && st.tracks[0] ? st.tracks[0].trackId : null);
+    if (view.id === actual && st.sourceTier === 'bundled') { return true; }
+    return switchMainTrack(view.id);
   }
 
   /**
@@ -745,6 +780,7 @@
     addTrack: addTrack,
     removeTrack: removeTrack,
     nextTrack: nextTrack,
+    selectTrack: selectTrack,
     onSourceFailure: onSourceFailure,
     getActiveTrackCount: getActiveTrackCount,
     dispose: dispose,

@@ -138,10 +138,16 @@
     <footer class="footer" role="contentinfo">
       <div class="lib-summary">
         <span id="lib-status" class="lib-status" aria-live="polite">● 本地合成 · 已内置 30 首验证曲目</span>
-        <button id="btn-details" type="button" class="text-btn" aria-expanded="false" aria-controls="details-panel">
-          详情 <span aria-hidden="true">▾</span>
-        </button>
+        <div class="lib-actions">
+          <button id="btn-library" type="button" class="text-btn" aria-expanded="false" aria-controls="library-panel">
+            声音库 <span aria-hidden="true">▾</span>
+          </button>
+          <button id="btn-details" type="button" class="text-btn" aria-expanded="false" aria-controls="details-panel">
+            详情 <span aria-hidden="true">▾</span>
+          </button>
+        </div>
       </div>
+      <div id="library-panel" class="library-panel" hidden></div>
       <div id="details-panel" class="details-panel" hidden></div>
 
       <section class="license-block" aria-labelledby="license-heading">
