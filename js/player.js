@@ -628,6 +628,10 @@
       if (!isFinite(volume)) { volume = 0; }
       volume = round2(volume);
       if (t.kind === 'track') {
+        /* 同时只有一首在线曲目：slots[1..] 恒为合成声景，因此只接受首轨为在线曲目。
+           索引 >0 的 track 条目与既有「非法条目静默丢弃」同一口径，
+           否则该 spec 无法被 getMixSpec() 精确复现（还原会悄悄丢轨）。 */
+        if (i > 0) { continue; }
         if (typeof t.trackId !== 'string' || !t.trackId.trim()) { continue; }
         tracks.push({ kind: 'track', trackId: t.trackId.trim(), volume: volume });
       } else if (t.kind === 'voice') {
@@ -660,26 +664,46 @@
     store.savePrefs();
   }
 
-  /** 按索引补齐缺失的声景槽位（只追加 voice，触顶即停）。 */
-  function fillMissingSlots(mix) {
-    var cursor = slots.length;
-    while (cursor < mix.tracks.length) {
-      var want = mix.tracks[cursor];
-      if (!want || want.kind !== 'voice') { cursor += 1; continue; }
-      if (!addTrack(want.voice).ok) { break; }
-      cursor += 1;
+  /**
+   * 让叠加槽位（slots[1..]）的 voice 序列与 mix.tracks[1..] 的 voice 序列精确一致。
+   * 只按索引改音量而不换 voice 会让预设声景被场景处方「静默顶替」（BR-52），
+   * 所以还原必须落到 voice 本身。
+   *
+   * 硬约束：
+   * - 绝不触碰 slots[0]（main）：不改它的 voice / trackId / url / display / volume，
+   *   也不 remove 它。main 的 voice 由场景处方 padVoice 决定（buildSceneSlots /
+   *   applyScene 每次都会重置它），预设不参与还原；在线主音轨另行走 upgradeMain。
+   * - 删除一律走 removeTrack()（含淡出 + scheduleRelease），不直接 splice，避免漏放节点。
+   * - 不触碰 recordDegrade / badge / playing：还原混音不是降级事件。
+   * - 已一致时零扰动（不删不建），避免打断正在播放的声景（低刺激边界）。
+   * @param {Object} mix
+   * @returns {boolean} 是否发生了重建
+   */
+  function reconcileLayers(mix) {
+    var i;
+    var want = [];
+    var have = [];
+    for (i = 1; i < mix.tracks.length; i += 1) {
+      if (mix.tracks[i].kind === 'voice') { want.push(mix.tracks[i].voice); }
     }
-  }
-
-  /** 收敛到预设轨数：从尾部移除多余槽位（永不删除 main）。 */
-  function trimSlots(count) {
-    var guard = 0;
-    while (slots.length > count && guard < C.MAX_TRACKS + 2) {
-      guard += 1;
-      var last = slots[slots.length - 1];
-      if (!last || last.id === 'main') { break; }
-      removeTrack(last.id);
+    for (i = 1; i < slots.length; i += 1) { have.push(slots[i].voice); }
+    var same = (want.length === have.length);
+    if (same) {
+      for (i = 0; i < want.length; i += 1) {
+        if (want[i] !== have[i]) { same = false; break; }
+      }
     }
+    if (same) {
+      /* 零扰动证据：供自检断言「正常路径没有被无谓重建」（仅 SW.RUNTIME 内可读） */
+      SW.RUNTIME.reconcileSkipped = true;
+      return false;
+    }
+    SW.RUNTIME.reconcileSkipped = false;
+    for (i = slots.length - 1; i >= 1; i -= 1) { removeTrack(slots[i].id); }
+    for (i = 0; i < want.length; i += 1) {
+      if (!addTrack(want[i]).ok) { break; }
+    }
+    return true;
   }
 
   /** 逐槽音量（按索引对齐）+ 主音量。 */
@@ -692,15 +716,13 @@
   }
 
   /**
-   * 首次手势后落地 pendingMix：槽位已由 buildSceneSlots 建好，这里只做收敛 + 音量。
+   * 首次手势后落地 pendingMix：槽位已由 buildSceneSlots 建好，这里做 voice 对齐 + 音量。
    * 主音轨不在此处加载，而是由调用方交给唯一一次 upgradeMain（避免重复加载）。
-   * 若首轨是声景（合成层兜底时的垫声），主槽位本就是同场景同一垫声，无需重建声源。
    * @param {Object} mix
    * @returns {string|null} 预设指定的主音轨 id
    */
   function applyPendingMix(mix) {
-    trimSlots(mix.tracks.length);
-    fillMissingSlots(mix);
+    reconcileLayers(mix);
     applyMixVolumes(mix);
     var first = mix.tracks[0];
     if (first && first.kind === 'track' && first.trackId) {
@@ -717,7 +739,7 @@
   /**
    * 应用一份混音描述（预设 / 分享链接共用）。
    * 未启动：缓存为 pendingMix，返回 {ok:true, pending:true}，绝不创建 AudioContext。
-   * 已启动：applyScene → 主音轨 → 删多余槽位 → 补声景槽位 → 逐槽音量 → 主音量。
+   * 已启动：applyScene → 主音轨 → 按 voice 序列对齐槽位 → 逐槽音量 → 主音量。
    * @param {Object} spec
    * @returns {{ok:boolean, pending?:boolean, reason?:string}}
    */
@@ -733,8 +755,7 @@
     if (mix.scene !== store.getState().scene) { applyScene(mix.scene); }
     var first = mix.tracks[0];
     if (first && first.kind === 'track' && first.trackId) { selectTrack(first.trackId); }
-    trimSlots(mix.tracks.length);
-    fillMissingSlots(mix);
+    reconcileLayers(mix);
     applyMixVolumes(mix);
     return { ok: true, pending: false };
   }
