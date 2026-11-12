@@ -1,6 +1,6 @@
 # 静澜 Stillwave · 最终验收报告（QA Report）
 
-> 版本：v1.0 · 生成时间：2026-11-10 · 交付总监：齐活林（team lead）
+> 版本：v1.0 · 生成时间：2026-11-10（初版）／2026-11-13（Round 5 更新） · 交付总监：齐活林（team lead）
 > 关联文档：`01-prd.md`（PRD v1.1）· `02-architecture.md`（架构 v1.1a）· `03-implementation.md`（实现）
 > 验证环境：macOS arm64 · Playwright 1.60.0 · Google Chrome（channel=chrome，headless）· Python 3.9
 
@@ -10,15 +10,17 @@
 
 | 项 | 结果 |
 |---|---|
-| 正式断言（formal assertions） | **91 / 91 全部通过（100%）** |
+| 正式断言（formal assertions） | **99 / 99 全部通过（100%）** |
 | 失败（failed） | **0** |
 | 未验证（unverified，环境限制，不计入源码失败） | **10** |
-| 总用例 | 101 |
+| 总用例 | 109 |
 | ROUTE | **NoOne**（无需工程/QA 返工；10 项未验证为跨浏览器与本环境时间限制，非源码缺陷） |
 
-> **口径说明（Round 4）**：上表为 **Round 4（声音库验收轮）** 的全量结果。相较 Round 3 的 91 用例 / 81 正式断言，本轮新增 10 条正式断言（静态 ST-25~ST-27、浏览器 BR-40~BR-46，全部覆盖新增的声音库 P0-1 功能），因此总用例 101、正式断言 91，失败仍为 0，正式通过率保持 100%。Round 4 明细见 §12。
+> **口径说明（Round 4，历史留档）**：Round 4（声音库验收轮）的全量结果为 **101 用例 / 91 正式断言 / 0 失败 / 10 未验证**。相较 Round 3 的 91 用例 / 81 正式断言，该轮新增 10 条正式断言（静态 ST-25~ST-27、浏览器 BR-40~BR-46，全部覆盖新增的声音库 P0-1 功能），正式通过率保持 100%。Round 4 明细见 §12。
 
-**一句话结论**：在干净算力环境下，站点全部 91 条正式验收断言稳定通过，零源码失败；3 个此前在高负载轮次（Round 2）曾出现的失败经独立复核确认为**纯环境性**（机器负载 41.86 导致首屏 7.3s、在线音源升级未在 9s 内完成），在负载回落（≤8）后全部转 PASS；另有 1 个 30 首批量探测的偶发限流在探针加固后稳定 30/30。剩余 10 个未验证项全部是**跨浏览器启动能力**与 **60 分钟长时浸泡**的本环境/时间限制，已在 §6 逐条如实列出，绝未外推或伪造。Round 4 在 Round 3 基础上把新增的声音库（可浏览/可筛选/可点选）纳入自动化闸门，10 条新断言全部 PASS，且未削弱或改动任何既有用例。
+> **口径说明（Round 5）**：上表已更新为 **Round 5（收藏 + 混音预设验收轮）** 的全量结果。相较 Round 4 的 101 用例 / 91 正式断言，本轮 **+8 用例**（静态 ST-28 设计令牌对比度实算、ST-29 收藏与预设契约；浏览器 BR-50~BR-54，以及守降级态恢复的 BR-55），总用例 109、正式断言 91 → **99**，失败 0、未验证 10 不变。其中 ST-28 来自同期 P0-4a 三级文字对比度修复的闸门补强（Round 4 报告成稿后落地），其余 7 条对应 P0-2 及其暴露出的降级态缺陷。需要明确记录的是：**BR-52 与 BR-55 都不是一开始就绿的**——BR-52 首跑 FAIL，原因是 `applyMix` / `applyPendingMix` 只裁剪轨数、补齐缺失层、按索引对齐音量，从不按 spec 的 `voice` 重建已有槽位，导致预设声景被场景处方静默顶替（`brown` 变 `rain`）；BR-55 首跑 FAIL，暴露降级态主槽位悬空句柄导致「点播放没反应」（§13.6）。两条都经产品可达路径复现、由 `player.js` 修复后才转绿，断言全程未放宽。Round 5 明细与两条缺陷闭环见 §13。
+
+**一句话结论**：在干净算力环境下，站点全部 99 条正式验收断言稳定通过，零源码失败；3 个此前在高负载轮次（Round 2）曾出现的失败经独立复核确认为**纯环境性**（机器负载 41.86 导致首屏 7.3s、在线音源升级未在 9s 内完成），在负载回落（≤8）后全部转 PASS；另有 1 个 30 首批量探测的偶发限流在探针加固后稳定 30/30。剩余 10 个未验证项全部是**跨浏览器启动能力**与 **60 分钟长时浸泡**的本环境/时间限制，已在 §6 逐条如实列出，绝未外推或伪造。Round 4 在 Round 3 基础上把新增的声音库（可浏览/可筛选/可点选）纳入自动化闸门，10 条新断言全部 PASS，且未削弱或改动任何既有用例。Round 5 把收藏与混音预设（P0-2）纳入闸门，连同同期对比度闸门 ST-28 与降级态恢复用例 BR-55 共新增 8 条正式断言；其中 BR-52 抓到「预设声景被场景处方静默顶替」、BR-55 抓到「降级后点播放没反应」，两条都在修复后转绿，本轮最终 99/99、0 失败。
 
 ---
 
@@ -26,7 +28,7 @@
 
 | 闸门 | 验收目标 | 状态 | 关键证据 |
 |---|---|---|---|
-| A1 | 契约挂载、9 个 `defer` 脚本顺序、无 ESM | ✅ PASS | static_contracts 27/27（Round 4）；`node --check` 9/9 |
+| A1 | 契约挂载、9 个 `defer` 脚本顺序、无 ESM | ✅ PASS | static_contracts 29/29（Round 5）；`node --check` 9/9 |
 | A2 | 跨浏览器（Chrome/Firefox/Safari/WebKit） | ⚠️ UNVERIFIED | 仅 Chrome 可启动；Firefox/WebKit 二进制已下载但本环境启动超时；Safari 无 safaridriver |
 | A3 | 音频自愈 ≤3000ms、播放不中断、无弹窗无闪烁 | ✅ PASS | degrade_repeats：3 类故障 × 2 组配置 × 5 次复现，lastDegradeDurationMs 全 ≤2861ms |
 | A4 | ≥30 首在线曲目逐条真实可播（元数据+时长） | ✅ PASS | BR-16：首轮 30/30（探针加固后） |
@@ -56,7 +58,7 @@
 
 > Round 3 是「干净算力轮」：env_probe/static_contracts/refresh_script/degrade_repeats 与 Round 2 完全一致（环境无关、确定性），browser 套件在本轮重新实跑。
 >
-> 本节为 **Round 3 的历史留档**（91 用例 / 81 正式断言）。新增声音库断言后的 **Round 4 逐套件结果**（101 用例 / 91 正式断言）见 §12.2。
+> 本节为 **Round 3 的历史留档**（91 用例 / 81 正式断言）。新增声音库断言后的 **Round 4 逐套件结果**（101 用例 / 91 正式断言）见 §12.2；新增收藏、预设与降级态恢复断言后的 **Round 5 逐套件结果**（109 用例 / 99 正式断言）见 §13.1。
 
 ---
 
@@ -194,10 +196,10 @@ Round 2 在高负载（load average **41.86 / 41.26 / 42.09**）下出现 3 个�
 | 架构 | `docs/02-architecture.md`（v1.1a） |
 | 实现记录 | `docs/03-implementation.md` |
 | 本验收报告 | `docs/04-qa-report.md` |
-| QA 套件与证据 | `qa/`（9 脚本 + `results/round3/`、`results/round4/` 数据 + `screenshots/`） |
+| QA 套件与证据 | `qa/`（9 脚本 + `results/round3/`、`results/round4/`、`results/round5/` 数据 + `screenshots/`） |
 | 曲库动态更新 | `meditation/tools/refresh-sources.py` + `meditation/.github/workflows/refresh-sources.yml` |
 
-**最终 ROUTE：NoOne** —— 全部 91 条正式断言（Round 4 口径）稳定通过，0 源码失败；10 项未验证为跨浏览器与本环境时间限制，已逐条如实披露，无需工程或 QA 返工。
+**最终 ROUTE：NoOne** —— 全部 99 条正式断言（Round 5 口径）稳定通过，0 源码失败；10 项未验证为跨浏览器与本环境时间限制，已逐条如实披露，无需工程或 QA 返工。
 
 ---
 
@@ -279,4 +281,128 @@ BR-45 **不要求**终态必须是 `tier=bundled`（在线）。原因有三：
 | `qa/test_browser.py` | 新增 `group_library(s, browser, base_url, manifest)` 与 BR-40~BR-46；在 `run()` 中紧随 `group_core` 之后调用，复用同一页面以控制耗时 |
 | `qa/run_all.py` | `--round` 合法值扩展为 `[1, 2, 3, 4]`，本轮结果归档到 `qa/results/round4/` |
 | `docs/04-qa-report.md` | 结论数字更新为 Round 4 口径，并追加本节 |
+
+---
+
+## 13. Round 5：收藏与混音预设（P0-2）功能验收
+
+> 触发需求：P0-2「收藏 + 自定义混音预设」——把「再听一次刚才那套混音」变成可收藏曲目、可保存/跨场景还原的混音处方。
+> 本轮 QA 只做一件事：把该功能**契约化**进自动化套件，并跑一次完整回归。断言开发阶段站点源码零改动；本轮站点源码的改动全部集中在两处缺陷修复：BR-52 抓到的预设还原缺口（§13.2）、BR-55 抓到的降级态悬空句柄（§13.6）。
+
+### 13.1 本轮新增的 8 条正式断言
+
+> 8 条的构成：ST-28（P0-4a 对比度闸门，Round 4 报告成稿后随 a11y 修复落地）+ **P0-2 相关 7 条**（ST-29 静态契约、BR-50~BR-54 浏览器端到端、BR-55 降级态恢复）。用例总数 101 → 109、正式断言 91 → 99。
+
+| 用例 | 断言内容 | 判定要点 |
+|---|---|---|
+| ST-28 | 设计令牌对比度实算 | 直接由 `app.css` 中的颜色令牌两两实算对比度：正文 ≥ 4.5:1、控件/焦点 ≥ 3:1（不靠肉眼与截图） |
+| ST-29 | 收藏与预设静态契约 | ① `STORAGE_KEYS` 恰 5 个键，含 `sw.favorites.v1` / `sw.presets.v1`；② `clearAll` 体内同时有 `removeStorage(K.favorites)` 与 `removeStorage(K.presets)`；③ `SW.store` 导出 6 个收藏/预设方法；④ `main.js` 契约含 3 个快照（favorites / presets / mixSpec）与 4 个动作（toggleFavorite / savePreset / deletePreset / applyMix）；⑤ `ui.js` **0 处** `prompt(` / `alert(` / `confirm(`（不用阻塞式弹窗）；⑥ `#btn-presets` 带 aria 关联且 `#preset-panel` 默认 `hidden`；⑦ `#btn-fav-only` 不在 `.lib-filters` chip 组内；⑧ `.lib-fav` / `.preset-apply` / `.preset-delete` 三条规则均含 `min-height: var(--touch)`；⑨ 展示层零 `originalTitle` |
+| BR-50 | 收藏往返 + 只看收藏 | 收藏 3 首 → `count=3`；`localStorage['sw.favorites.v1']` 键恰为 `{v:1, ids}` 且 `v=1`；重绘后 `.lib-fav[aria-pressed="true"]=3`（总星标 30）；点 `#btn-fav-only` → 列表恰 3 首且 id 集合等于收藏集、按钮不在筛选组内；再点 → 30 首；reload 后仍 3；取消 1 首 → 2 且存储同步；零 console / pageerror |
+| BR-51 | 预设跨场景精确还原 | 播放后采样 `getMixSpec()` 至连续两次一致得 `specA` → `savePreset` 成功 → 切场景后 `getMixSpec()` **必须与 `specA` 不同**（防「本来就没变」的假绿）→ `applyMix(specA)` 返回 `{ok:true,pending:false}` → 8s 内 `getMixSpec()` 与 `specA` **逐字段深比较相等**、`playing` 仍为 true、零新增错误 |
+| BR-52 | 未启动应用预设：禁自动播放 + 首次手势落地 | `applyMix` 在未启动态返回 `{ok:true,pending:true}`；AudioContext 未创建（`none` / `suspended`）；`playing=false`、`playState=idle`；配置态已生效（`scene=sleep`、`masterVolume=0.42`）；点 `#btn-play` 后 6s 内 `playing=true` 且 `getMixSpec().tracks` 与传入 `tracks` **逐条相等** |
+| BR-53 | 存储不可用降级 | `inject.setStorageUnavailable(true)` 后 `toggleFavorite` / `savePreset` 均 `{ok:true}` 不抛错；`getState().storageMode=memory`；声音库仍 30 首可交互；零 console / pageerror |
+| BR-54 | `clearAll` 彻底性 + 损坏数据容错 | 先造 2 收藏 + 1 预设 → `clearStorage` → 直读 `sw.favorites.v1` / `sw.presets.v1` / `sw.prefs.v1` **三键均为 null**；写入损坏 JSON（`{not json`）与版本不符数据（`{"v":99,...}`）后 reload → 两个快照 `count=0`、声音库仍 30 首、零新增 page error |
+| BR-55 | 降级态：定时器渐弱结束后再播放仍能恢复且零异常 | 全程 `inject.setOffline(true)`（不依赖 archive.org）：起播并降到 `sourceTier=synth`（8s 未降级即 FAIL）→ `setTimer(0.05, 30)` → 等 `timer.phase=ended`（12s）→ 断言 `playing=false`、`effectiveGain.fade=1` → 再 `play()`：**不抛异常**、`playing=true`、`playState=playing`、pageerror 与 console error 增量均为 0、`tracks≥1`、`master>0` |
+
+本轮全量逐套件结果（`qa/results/round5/summary.json`，`round=5`）：
+
+| 套件 | 总用例 | 通过 | 失败 | 未验证 | 耗时（单机一次全量，量级参考） |
+|---|---|---|---|---|---|
+| env_probe | 11 | 6 | 0 | 5 | 10.9s |
+| static_contracts | 29 | 29 | 0 | 0 | 0.4s |
+| refresh_script | 7 | 7 | 0 | 0 | 12.7s |
+| browser | 56 | 51 | 0 | 5 | 142.8s |
+| degrade_repeats | 6 | 6 | 0 | 0 | 90.7s |
+| **合计** | **109** | **99** | **0** | **10** | **≈4m18s，正式通过率 100%（99/99）** |
+
+变更边界：`qa/test_static_contracts.py` 新增 ST-29 与 `strip_js_comments()`（ST-28 由 P0-4a 对比度修复一并加入）；`qa/test_browser.py` 新增 `group_presets()` / BR-50~BR-54、`group_resume_degraded()` / BR-55，并把 BR-17/BR-30 从「单次采样」改为「3 次内任一次在线即通过」；`--round` 合法值已含 5。`meditation/`、`stillwave/`、`qa/common.py`、`qa/harness.py` 未被 QA 改动。
+
+### 13.2 BR-52 抓到的真实缺陷与修复闭环
+
+**现象（修复前）**：`applyMix` / `applyPendingMix` 只做三件事——裁剪到预设轨数（`trimSlots`）、补齐缺失层（`fillMissingSlots`）、按索引对齐音量（`applyMixVolumes`）。全程没有任何一步把 spec 里的 `voice` 写回**已有**槽位。当目标场景处方的层数 ≥ spec 轨数、且同索引的 voice 不同时，预设里的声景就被场景处方**静默顶替**。
+
+**实测**（未启动路径与已启动路径结果相同）：
+
+```
+spec  : {scene:'sleep', masterVolume:0.42, tracks:[rain@0.33, brown@0.21]}
+before: [rain@0.33, rain@0.21]        ← brown 被 sleep 处方的 rain 顶替
+```
+
+全程 `console` / `pageerror` 均为 0——这是**静默**错误，只有逐字段比对 `getMixSpec()` 才能发现，靠「看着能出声」永远抓不到。
+
+**产品可达路径**：播放 → 打开混音 → 删掉 layer-0 / layer-1 → 加「白噪」→ 保存预设 → 切到助眠（`applyScene` 按处方重建槽位）→ 切回原场景 → 应用该预设 → 自定义的「白噪」层丢失。即不是只有契约层才能构造的极端入参。
+
+**修复（`meditation/js/player.js`）**：删除 `trimSlots` / `fillMissingSlots`，收敛为 `reconcileLayers(mix)`：
+
+- 只比较 `slots[1..]` 与 `mix.tracks[1..]` 的 voice 序列；**完全一致时零扰动**（不删不建，仅改音量），并以 `SW.RUNTIME.reconcileSkipped` 留下自检痕迹——守住「不打断正在播放的声景」的低刺激边界；
+- 不一致时：倒序 `removeTrack()`（沿用既有淡出 + `scheduleRelease`，不直接 `splice`）清空全部非 main 槽位，再按 spec 顺序 `addTrack(voice)` 重建（触顶即停）；
+- `slots[0]`（main）**永不触碰**：不改其 voice / trackId / url / display / volume，也不移除；在线主音轨仍只由 `selectTrack` / `upgradeMain` 处理；
+- `applyPendingMix` 与 `applyMix` 都改为 `reconcileLayers(mix) → applyMixVolumes(mix)`；
+- 还原过程不触碰 `recordDegrade` / badge / playing：还原混音不是降级事件。
+
+**附带收紧（`sanitizeMix`）**：索引 >0 的 `{kind:'track'}` 条目一律丢弃。因为同时只有一首在线曲目，`slots[1..]` 恒为合成声景；若接受这类条目，`applyMix` 会返回 `{ok:true}` 但还原时必然丢轨，破坏「**被接受的 spec 一定能被 `getMixSpec()` 精确复现**」这一不变式。独立复核：传入 `[rain@0.33, {kind:'track', trackId:'jamendo-002032'}@0.21]`，`applyMix` 仍 `{ok:true,pending:true}`，手势后 `getMixSpec()` 只返回 1 条 `rain@0.33`，与收窄后的 spec 一致（`equal=true`，零 console）。
+
+**修复后**：BR-52 的九项子判据全绿——`{ok:true,pending:true}` / `ctxState ∈ {none, suspended}` / `playing=false` / `playState=idle` / `scene=sleep` / `masterVolume=0.42` / 手势后 `playing=true` / `expectedTracks == actualTracks` / 零 console·pageerror。实测 `actualTracks=[rain@0.33, brown@0.21]`，与传入逐条相等。
+
+**断言强度未变**：BR-52 自首跑起就是「逐条逐字段相等」的完整比较，转绿不是放宽判据换来的；同一次全量内 BR-40~BR-46、BR-50 / BR-51 / BR-53 / BR-54 与 BR-16 / BR-16b、BR-17、BR-30、DR-A/B 均无回归。
+
+### 13.3 断言有效性验证（注入 → 变红 → 还原 → 复绿）
+
+| # | 注入位置 | 注入方式 | 变红用例 | 实测红态 |
+|---|---|---|---|---|
+| 1 | `js/store.js#clearAll` | 注释掉 `removeStorage(K.favorites)` | ST-29 | `clearAll=False`（收藏键不再被清除） |
+| 2 | `js/ui.js#renderLibraryPanel` | 「只看收藏」分支改为 `if (false && onlyFavorites…)` | BR-50 | `domOnly.tracks=30`（列表未收敛到 3 首） |
+| 3 | `js/player.js#applyMix` | 删去 `applyScene(mix.scene)` | BR-51 | `specB == specA`，`changed=False`（「必须变过」的前提不成立） |
+| 4 | `js/player.js#applyMix` | 未启动分支加入 `startFromGesture()` | BR-52 | `ctxState=running`、`playing=true`（禁自动播放判据红） |
+
+四次注入在还原后 4 条断言全部复绿；每处还原都用 `cmp` 与注入前快照做字节比对、`shasum -c` 全 OK，确保「变红」不是别处改坏导致的连带效应。
+
+**另一类有效性证据：先红后绿（非注入）**。BR-55 的红不是人为注入造出来的——它是在**未修复的站点**上首跑就红（`playError` 含 `Cannot read properties of null (reading 'gain')`、`playingAfter=false`、`playStateAfter=paused`），修复后同一个用例、同一套判据转绿（`playError=null`、`playingAfter=true`、`playStateAfter=playing`、错误增量 0）。这比注入验证更强：它证明这条断言确实指向一个真实缺陷，而不是为了绿而写的空壳。详见 §13.6。
+
+**必须单独记一条「自证伪」**：ST-29 的第一版实现用全文文本匹配判定条件，注入 #1 之后**依然是绿的**——因为被注释掉的那行仍留着 `removeStorage(K.favorites)` 子串，断言被注释骗过。这是一次典型的**假绿**。修正为先 `strip_js_comments()` 剥掉块注释与行注释、再在剥净后的代码上评估 `clearAll` 体 / `SW.store` 导出 / `buildActions` 块 / `prompt|alert|confirm` 扫描 / `originalTitle` 计数，同一注入才如实变红。这条记录的意义大于 ST-29 本身：它证明本套件对「文本匹配型静态断言」的假绿风险做过对抗验证，而不是把「绿」当可信。
+
+### 13.4 三处实现偏差（如实记录）
+
+1. **`getMixSpec()` 数据源**：原实现只读运行时槽位，首播前 `slots` 尚未建立 → 「首播前保存当前混音」必然失败（`reason:'tracks'`）。已改为三级数据源：运行时槽位 → `pendingMix` → 场景处方。
+2. **`actions.toggleFavorite` 是纯数据入口**，不 emit 重绘事件。BR-50 的 DOM 星标断言（`.lib-fav[aria-pressed="true"]=3`）前需触发一次真实渲染（用例用 `setLibraryFilter('all','all')` 驱动一次），并同时记录「未重绘时 `pressed=0`」，以区分「数据没写进去」与「只是没重绘」。
+3. **`getLibrarySnapshot()` 按设计只反映 scene / kind 筛选**，不反映「只看收藏」（后者由 `getFavoritesSnapshot().onlyFavorites` 暴露）。因此 BR-50 对「只看收藏」的结果用 `.lib-track` DOM 计数断言，而不是拿快照当唯一真相。
+
+### 13.5 已知边界（不修，声明）
+
+预设 / 分享 spec 的 `tracks[0]` 若为 `{kind:'voice', voice:X}` 且 X ≠ 该场景处方的 `padVoice`，还原后主槽位仍是**场景垫声**而非 X：`reconcileLayers` 只对齐 `slots[1..]`，主槽位 voice 由 `applyScene` / `buildSceneSlots` 决定。
+
+- 现有 P0-2 UI 走不到这一态：主槽位 voice 只能由场景决定，保存预设时 main 的 voice 也来自同一场景处方，二者天然一致；track 型主音轨走 `selectTrack` / `upgradeMain`。
+- 同一语义的另一面：`tracks[0].kind:'track'` 的 spec 只有在在线音源**真正挂上**之后（`selectTrack` → `attachOnline` 完成）才会与 `getMixSpec()` 深等；在挂载窗口内以及降级 / 离线态，主槽位如实报 `{kind:'voice', voice:padVoice}`（`getMixSpec()` 只在槽位 `kind==='audio'` 且有 `trackId` 时才投影为 track）。这是 A14 白名单投影下的真实语义，**不应为了让断言变绿而改动**；BR-51 采样前等到连续两次读数一致、BR-52 在 pending 落地后取样，因此都不落在该窗口内。
+- 该缺口**未修复**，也不影响 BR-52 的九项判据；记为 P1 候选——未来若开放「自定义主垫声」或支持外部分享链接，必须一并处理。
+
+### 13.6 降级态悬空句柄：点播放没反应
+
+**现象（用户可见）**：网络到 archive.org 不可达或超时、产品按 AD-16 降到 L0 合成层之后，用户起播 → 设定时器 → 渐弱到点自然结束 → **再按播放没有任何反应**。没有报错提示，按钮状态也不动。
+
+**根因（函数级）**：`player.js#degradeToSynth` 对 `handles['main']` **无条件**执行 `scheduleRelease([old], 220)`，随后又因为 `old.type === 'synth'` 走「不重建」分支。于是当主槽位本来就是合成垫声时，`handles['main']` 被释放成空壳——`releaseVoice` 把 `trackGain` 置为 null，但没有任何代码把这个键从 `handles` 里摘掉。调试副本站实测：从 `start + 0.4s` 起该句柄就是 `{"id":"main","type":"synth","hasGain":false,"released":true}`，一路持续到 `timer ended`。
+
+**后果链**：`play()` 里读 `h.trackGain.gain` 抛 `TypeError: Cannot read properties of null (reading 'gain')`（`player.js:476`）→ 异常发生在 `store.patch({playing:true})` **之前** → `playing` 永远停在 false（用户点播放无反应），同时产生未捕获 pageerror（破坏 A6 零异常）。
+
+**修复（`meditation/js/player.js`，净 +25/−7）**：
+
+1. `degradeToSynth`：只在 `old.type !== 'synth'`（即真的在播在线音源）时淡出并释放；synth 垫声直接复用。已释放的句柄（`!old.trackGain`）先归一化为 null，走幂等重建分支。这是根因修复。
+2. `play()`、`applyDrift()`（两处）、`setTrackVolume()` 四处无保护解引用补空值守卫。明确**不使用**整体 `try/catch`——那会把真故障变成静默失败，正是这条缺陷难被发现的同类错误。
+3. `scheduleRelease()` 释放后从 `handles` 中删除仍指向同一对象的键，使「`handles` 只装活句柄」成为不变式（兜底，不替代第 1 条）。
+
+**红 → 绿闭环**：新增 `BR-55` 先在旧件上跑红——`playError` 含 `Cannot read properties of null (reading 'gain')`、`playingAfter=false`、`playStateAfter=paused`，全量 **109 / 98 / 1**；修复件上转绿——`playError=null`、`playingAfter=true`、`playStateAfter=playing`、pageerror 与 console error 增量均为 0、`tracks=3`、`master=0.45`，全量 **109 / 99 / 0**，`ROUTE: NoOne`。同一次全量里 BR-09~BR-12 与 DR-A/DR-B（30 次降级复现，2802~2804ms）全部 PASS，说明修复没有改变自愈耗时与降级行为。
+
+**必须记下的一条过程事实**：这条缺陷在上一轮曾被 QA 误判为「既有产品边界、与本次改动无关」——当时的对照实验只证明了「正常路径不触发」，却被外推成「不是缺陷」。随后主理人用带调试钩子的副本站把根因定位到函数级并证伪了该结论，缺陷按 P0 修复，BR-55 长期守住它。这是本轮质量体系里最值得记的一条：**把真缺陷说成「边界」，比漏测更危险**——漏测至少还留有被发现的机会，而错误结论会直接关掉追查的方向。该错误判断已在本报告中撤回，保留在此作为流程教训。
+
+### 13.7 未验证 10 条（沿用不美化）
+
+| 用例 | 原因 |
+|---|---|
+| EP-02.chromium / EP-02.firefox / EP-02.webkit | Playwright 三个引擎的 headless shell 在本机不可启动（二进制存在，启动超时） |
+| EP-05 | 系统 Safari 经 `safaridriver` 不可驱动 |
+| EP-06 | Safari / Firefox 完整使用路径（因上述能力缺失而未执行） |
+| BR-31.chromium / .firefox / .webkit / .safari | 跨浏览器完整核心路径，随 EP-02 / EP-05 一并未验证 |
+| BR-33 | 60 分钟连续播放（内存泄漏 / 循环接缝），本环境时间成本不划算，仅做了 9 分钟浸泡（A7 PARTIAL） |
+
+这 10 条与 Round 3 / Round 4 完全同源、同条目，本轮**未新增、未美化、未用其他用例替代**；它们不计入正式断言分母（99），也不被算作通过。
+
 
