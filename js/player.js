@@ -103,6 +103,11 @@
         var idx = pendingReleases.indexOf(h);
         if (idx >= 0) { pendingReleases.splice(idx, 1); }
         synth.releaseVoice(h);
+        /* 释放后不留悬空引用：handles 只装活句柄（degradeToSynth 之外的兜底，
+           不替代根因修复；真的没有句柄时 play() 的空值守卫会安全跳过）。 */
+        Object.keys(handles).forEach(function (k) {
+          if (handles[k] === h) { delete handles[k]; }
+        });
       });
       var ti = releaseTimers.indexOf(timer);
       if (ti >= 0) { releaseTimers.splice(ti, 1); }
@@ -350,12 +355,19 @@
     var scene = store.getState().scene;
     var preset = C.SCENES[scene] || C.SCENES.focus;
     var old = handles['main'];
-    if (old) {
+    /* 已释放过的句柄（trackGain 被 releaseVoice 置空）先归一化为 null，幂等重建 */
+    if (old && !old.trackGain) { old = null; }
+    /* 只有「真的在播在线音源」的句柄才需要淡出并释放；synth 垫声本身就是兜底层，
+       直接复用。否则 scheduleRelease 会把垫声 releaseVoice 成空壳，而重建分支又因
+       old.type === 'synth' 跳过，handles['main'] 便留下悬空引用，下次 play() 解引用
+       trackGain.gain 即抛错（「点了播放没反应」）。 */
+    if (old && old.type !== 'synth') {
       try { synth.rampGain(old.trackGain.gain, 0, 150); } catch (err) { /* 静默 */ }
       scheduleRelease([old], 220);
+      old = null;
     }
-    /* old 为 null（自愈入口已摘除）或为 audio 时，重建合成垫声，保证永不静音 */
-    if (!old || old.type !== 'synth') {
+    /* old 为 null（自愈入口已摘除 / 在线句柄已淡出）时重建合成垫声，保证永不静音 */
+    if (!old) {
       var pad = synth.createVoice(preset.padVoice, graph, {});
       var s = findSlot('main');
       var volume = s ? s.volume : 1.0;
@@ -400,13 +412,19 @@
     if (driftTimer !== null) { window.clearInterval(driftTimer); driftTimer = null; }
     var enabled = store.getState().autoDrift;
     if (!enabled) {
-      Object.keys(handles).forEach(function (id) { synth.setDriftGain(handles[id], 1); });
+      Object.keys(handles).forEach(function (id) {
+        var h = handles[id];
+        if (!h || !h.driftGain) { return; }
+        synth.setDriftGain(h, 1);
+      });
       return;
     }
     driftTimer = window.setInterval(function () {
       if (!store.getState().playing) { return; }
       Object.keys(handles).forEach(function (id) {
-        synth.setDriftGain(handles[id], 0.85 + Math.random() * 0.30);
+        var h = handles[id];
+        if (!h || !h.driftGain) { return; }
+        synth.setDriftGain(h, 0.85 + Math.random() * 0.30);
       });
     }, 8000);
   }
@@ -472,7 +490,7 @@
     if (st.playing) { return Promise.resolve(); }
     Object.keys(handles).forEach(function (id) {
       var h = handles[id];
-      if (!h) { return; }
+      if (!h || !h.trackGain) { return; }
       synth.rampGain(h.trackGain.gain, h.userVolume, 300);
       if (h.type === 'audio' && h.element) {
         try { var p = h.element.play(); if (p && p.catch) { p.catch(function () {}); } } catch (err) { /* 静默 */ }
@@ -776,7 +794,7 @@
     var value = Math.max(0, Math.min(1, Number(v) || 0));
     s.volume = value;
     var h = handles[slotId];
-    if (h) { synth.setTrackGain(h, value); }
+    if (h && h.trackGain) { synth.setTrackGain(h, value); }
     syncSlots();
     store.emit(E.VOLUME_CHANGED, { slotId: slotId, volume: value });
   }
