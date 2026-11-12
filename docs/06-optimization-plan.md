@@ -145,7 +145,7 @@ STORAGE_KEYS.presets   = 'sw.presets.v1'
 | 键不存在 / JSON 解析失败 / 顶层非对象 | 返回空集合，不抛错 |
 | `v` 不等于 1 | 忽略该键（未来迁移入口），不崩溃 |
 | 收藏 id 不在当前清单白名单 | 读取时静默丢弃（曲目下线不会让面板报错） |
-| 预设 `tracks` 为空 / >3 / 字段类型错 | 丢弃该条预设 |
+| 预设 `tracks` 为空 / >3 / 字段类型错 | 非法条目逐条丢弃；超过 3 条时保留前 3 条；丢弃后为空才整条拒绝（`reason:'tracks'`） |
 | `volume` 越界 | 钳制到 0..1，保留两位小数 |
 | `name` 超长 / 空白 / 含控制字符 | 截断至 24 字符、去空白；为空则丢弃 |
 | `localStorage` 不可用 | 走 `writeStorage` 既有内存降级，**不报错、不白屏** |
@@ -176,6 +176,17 @@ STORAGE_KEYS.presets   = 'sw.presets.v1'
 
 `startFromGesture()` 第 451–452 行处：若存在 `pendingMix`，改用其主音轨调用 `upgradeMain`，并在 `store.patch` 后应用混音，然后清空 `pendingMix`。
 `applyScene()` **不修改**（避免影响既有 91 条断言）；预设应用一律在 `applyScene` 返回后叠加。
+
+#### 实施期修正（2026-11-13，独立复核发现）
+
+`getMixSpec()` 原实现只读运行时槽位数组 `slots`，而 `slots` 在首次手势前为空、`defaultState().tracks` 也是 `[]`。后果：**首播前「保存当前混音」必然失败**（`reason:'tracks'`），分享链接也会丢掉整段混音——这两条恰是 P0-2/P0-3 的主路径。
+
+修正为三级数据源（`player.js#getMixSpec`），而非让调用方兜底：
+1. `slots` 非空（已启动）→ 以运行时槽位为准（`syncSlots()` 保证与 `store.tracks` 同源）；
+2. 否则 `pendingMix`（刚应用的预设或分享配置）→ 用它；
+3. 否则 `buildSceneSlots(scene)`（按下播放后实际会发声的处方）→ 保证首播前保存/分享仍有意义。
+
+同批修正：`selectTrack()` 之后的 `startFromGesture` 仍只有**一次** `upgradeMain`；无 `pendingMix` 时参数与基线逐字相同（已用 `diff` 验证）。
 
 #### 验收要点
 

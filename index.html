@@ -139,6 +139,9 @@
       <div class="lib-summary">
         <span id="lib-status" class="lib-status" aria-live="polite">● 本地合成 · 已内置 30 首验证曲目</span>
         <div class="lib-actions">
+          <button id="btn-presets" type="button" class="text-btn" aria-expanded="false" aria-controls="preset-panel">
+            我的预设 <span aria-hidden="true">▾</span>
+          </button>
           <button id="btn-library" type="button" class="text-btn" aria-expanded="false" aria-controls="library-panel">
             声音库 <span aria-hidden="true">▾</span>
           </button>
@@ -147,6 +150,7 @@
           </button>
         </div>
       </div>
+      <div id="preset-panel" class="preset-panel" hidden></div>
       <div id="library-panel" class="library-panel" hidden></div>
       <div id="details-panel" class="details-panel" hidden></div>
 

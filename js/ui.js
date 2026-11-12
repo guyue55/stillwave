@@ -22,6 +22,9 @@
   var el = {};
   var lastMixSignature = '';
   var lastLibSignature = '';
+  var lastPresetSignature = '';
+  var onlyFavorites = false;      // P0-2「只看收藏」开关（独立按钮，不并入筛选 chip 组）
+  var presetInputHold = false;    // 保存预设后需要强制重建时，临时关闭「输入聚焦保护」
   var libFilter = { scene: 'all', kind: 'all' };
   var LIB_SCENES = ['all', 'focus', 'sleep', 'empty', 'meditation'];
   var LIB_SCENE_LABELS = { all: '全部', focus: '学习', sleep: '助眠', empty: '放空', meditation: '冥想' };
@@ -62,6 +65,7 @@
       'mix-count', 'btn-add', 'mix-cards', 'voice-picker', 'mix-empty',
       'custom-minutes', 'btn-custom-timer', 'timer-remaining', 'btn-cancel-timer',
       'lib-status', 'btn-details', 'details-panel', 'btn-library', 'library-panel',
+      'btn-presets', 'preset-panel',
       'btn-drift', 'btn-clear', 'toast'
     ].forEach(function (id) { el[id] = document.getElementById(id); });
     el.ringCircle = el['breath-ring'] ? el['breath-ring'].querySelector('.ring-circle') : null;
@@ -221,25 +225,38 @@
   }
 
   /**
-   * 声音库：可浏览 / 可筛选 / 可点选的曲目清单（P1-09）。
+   * 声音库：可浏览 / 可筛选 / 可点选 / 可收藏的曲目清单（P1-09 + P0-2）。
    * 数据一律来自 sources.getUiTrackList() 的 UiTrack 白名单投影，展示层拿不到
    * url / 源标题 / bytes / health 等源数据字段（AD-21）。
-   * 用 data-lib-name 而非 data-track-name，避免干扰 A14 对许可清单的 30 条扫描。
+   * 用 data-lib-name / data-fav-id 而非 data-track-name，避免干扰 A14 对许可清单的 30 条扫描。
+   * 收藏白名单过滤在本层完成：store 只存 id，清单里已不存在的收藏静默不显示。
    * 结构签名不变时只原地更新「正在播放」高亮，不重建 DOM，保住键盘焦点。
    */
   function renderLibraryPanel() {
     var panel = el['library-panel'];
     if (!panel) { return; }
     var list = sources.getUiTrackList();
+    var favIds = store.getFavorites();
+    var favMap = {};
+    var i;
+    for (i = 0; i < favIds.length; i += 1) { favMap[favIds[i]] = true; }
     var visible = list.filter(function (t) {
-      return (libFilter.scene === 'all' || t.scene === libFilter.scene) &&
+      var hitFilter = (libFilter.scene === 'all' || t.scene === libFilter.scene) &&
         (libFilter.kind === 'all' || t.kind === libFilter.kind);
+      if (!hitFilter) { return false; }
+      if (onlyFavorites && !favMap[t.id]) { return false; }
+      return true;
     });
-    var signature = libFilter.scene + '|' + libFilter.kind + '|' + list.length;
+    var signature = libFilter.scene + '|' + libFilter.kind + '|' +
+      (onlyFavorites ? '1' : '0') + '|' + favIds.join(',') + '|' + list.length;
     if (signature !== lastLibSignature || !panel.firstChild) {
       var html = '<h3>声音库 · 挑一首</h3>' +
         '<p class="lib-hint">共 ' + list.length + ' 首已验证曲目。点选即作为主音源播放，' +
-        '不改变当前场景的定时器、亮度与呼吸设置。</p>';
+        '不改变当前场景的定时器、亮度与呼吸设置。点右侧 ☆ 可收藏常听的曲目。</p>';
+      /* 独立开关：不属于 .lib-filters 两个 chip 组，避免打乱既有的场景/类型计数断言 */
+      html += '<p class="lib-flag-row"><button type="button" id="btn-fav-only"' +
+        ' class="lib-chip lib-chip-standalone" aria-pressed="' +
+        (onlyFavorites ? 'true' : 'false') + '">只看收藏</button></p>';
       html += '<div class="lib-filters" role="group" aria-label="按场景筛选">' +
         '<span class="lib-filter-label">场景</span>';
       LIB_SCENES.forEach(function (key) {
@@ -257,15 +274,23 @@
       html += '</div><p class="lib-count" aria-live="polite">显示 ' + visible.length + ' 首</p>';
       html += '<ul class="lib-list">';
       visible.forEach(function (t) {
-        html += '<li><button type="button" class="lib-track" data-lib-track="' + esc(t.id) + '"' +
+        var fav = !!favMap[t.id];
+        /* 星标是 .lib-track 的兄弟节点而非子节点：交互元素不允许嵌套 */
+        html += '<li class="lib-row">' +
+          '<button type="button" class="lib-track" data-lib-track="' + esc(t.id) + '"' +
           ' data-lib-name="' + esc(t.display) + '" aria-pressed="false">' +
           '<span class="lib-track-name">' + esc(t.display) + '</span>' +
           '<span class="lib-track-meta">' + esc(LIB_KIND_LABELS[t.kind] || '') +
-          ' · ' + esc(LIB_SCENE_LABELS[t.scene] || '') + '</span></button></li>';
+          ' · ' + esc(LIB_SCENE_LABELS[t.scene] || '') + '</span></button>' +
+          '<button type="button" class="lib-fav" data-fav-id="' + esc(t.id) + '"' +
+          ' aria-pressed="' + (fav ? 'true' : 'false') + '"' +
+          ' aria-label="收藏 ' + esc(t.display) + '">' + (fav ? '★' : '☆') + '</button></li>';
       });
       html += '</ul>';
       if (!visible.length) {
-        html += '<p class="lib-hint">这个组合下暂无曲目，换个筛选条件看看。</p>';
+        html += '<p class="lib-hint">' + (onlyFavorites
+          ? '还没有收藏的曲目。点曲目右侧的 ☆ 就能收藏，刷新后依然保留。'
+          : '这个组合下暂无曲目，换个筛选条件看看。') + '</p>';
       }
       panel.innerHTML = html;
       lastLibSignature = signature;
@@ -308,6 +333,97 @@
     if (LIB_KINDS.indexOf(kind) >= 0) { libFilter.kind = kind; }
     lastLibSignature = '';
     renderLibraryPanel();
+  }
+
+  /** 供契约只读：收藏快照（只列仍在曲库白名单内的 id，不含任何内部引用）。 */
+  function getFavoritesSnapshot() {
+    var list = sources.getUiTrackList();
+    var present = {};
+    var ids = [];
+    var fav = store.getFavorites();
+    var i;
+    for (i = 0; i < list.length; i += 1) { present[list[i].id] = true; }
+    for (i = 0; i < fav.length; i += 1) {
+      if (present[fav[i]]) { ids.push(fav[i]); }
+    }
+    return { count: ids.length, ids: ids, onlyFavorites: onlyFavorites };
+  }
+
+  /** 供契约只读：预设快照（只给数量与名称，不给内部对象引用）。 */
+  function getPresetsSnapshot() {
+    var items = store.getPresets();
+    var names = [];
+    for (var i = 0; i < items.length; i += 1) { names.push(items[i].name); }
+    return { count: items.length, names: names };
+  }
+
+  /**
+   * 预设面板：名称 + 「应用 / 删除」+ 内联保存行（ST-23 禁止 prompt / alert / dialog）。
+   * 结构签名不变时不重建 DOM；输入框聚焦期间绝不重建，避免打断输入与丢焦点。
+   */
+  function renderPresetPanel() {
+    var panel = el['preset-panel'];
+    if (!panel) { return; }
+    var active = document.activeElement;
+    if (!presetInputHold && active && active.id === 'preset-name-input') { return; }
+    var items = store.getPresets();
+    var signature = items.map(function (p) {
+      return p.name + '|' + p.scene + '|' + p.masterVolume + '|' + p.tracks.length;
+    }).join('~');
+    if (signature === lastPresetSignature && panel.firstChild) { return; }
+    lastPresetSignature = signature;
+    var html = '<h3>我的预设</h3>' +
+      '<p class="lib-hint">保存当前场景、主音量与混音轨，下次一键还原。</p>';
+    if (items.length) {
+      html += '<ul class="preset-list">';
+      items.forEach(function (p, index) {
+        html += '<li class="preset-item">' +
+          '<span class="preset-name">' + esc(p.name) + '</span>' +
+          '<button type="button" class="preset-apply" data-preset-idx="' + index + '"' +
+          ' aria-label="应用预设 ' + esc(p.name) + '">应用</button>' +
+          '<button type="button" class="preset-delete" data-preset-idx="' + index + '"' +
+          ' aria-label="删除预设 ' + esc(p.name) + '">删除</button></li>';
+      });
+      html += '</ul>';
+    } else {
+      html += '<p class="lib-hint">还没有预设。调好混音后，给它起个名字保存下来。</p>';
+    }
+    html += '<div class="preset-save-row">' +
+      '<input id="preset-name-input" class="preset-input" type="text" maxlength="' +
+      C.MAX_PRESET_NAME + '" placeholder="给这个混音起个名字" aria-label="预设名称">' +
+      '<button id="btn-preset-save" type="button" class="ghost-btn">保存当前混音</button>' +
+      '</div>';
+    panel.innerHTML = html;
+  }
+
+  /** 保存当前混音（供按钮与输入框回车共用）。 */
+  function saveCurrentMix() {
+    var panel = el['preset-panel'];
+    if (!panel) { return; }
+    var input = panel.querySelector('#preset-name-input');
+    var raw = input ? input.value : '';
+    var mix = player.getMixSpec();
+    var result = store.savePreset({
+      name: raw, scene: mix.scene,
+      masterVolume: mix.masterVolume, tracks: mix.tracks
+    });
+    if (!result.ok) {
+      if (result.reason === 'limit') { toast('预设已满（' + C.MAX_PRESETS + '）'); }
+      else if (result.reason === 'name') { toast('请先给预设起个名字'); }
+      else if (result.reason === 'tracks') { toast('还没有正在播放的混音，先点播放再保存'); }
+      else { toast('当前混音暂时无法保存'); }
+      return;
+    }
+    var saved = String(raw).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, C.MAX_PRESET_NAME);
+    if (input) { input.value = ''; }
+    lastPresetSignature = '';
+    /* 输入框里回车保存时焦点仍在输入框内：强制重建后把焦点还给新输入框，键盘流程不断 */
+    presetInputHold = true;
+    renderPresetPanel();
+    presetInputHold = false;
+    var next = panel.querySelector('#preset-name-input');
+    if (next && document.activeElement === document.body) { next.focus(); }
+    toast('已保存预设「' + saved + '」');
   }
 
   /** 混音卡片：仅当结构签名变化才重建 DOM，避免拖动滑块时被重绘打断。 */
@@ -502,6 +618,7 @@
     renderInfoPanel(state);
     renderDetailsPanel();
     renderLibraryPanel();
+    renderPresetPanel();
   }
 
   /** 每秒更新播放进度（避免高频全量渲染造成长任务）。 */
@@ -553,12 +670,85 @@
     el['btn-library'].addEventListener('click', function () {
       togglePanel(el['btn-library'], el['library-panel']);
     });
+    if (el['btn-presets']) {
+      el['btn-presets'].addEventListener('click', function () {
+        togglePanel(el['btn-presets'], el['preset-panel']);
+      });
+    }
+
+    /* 我的预设：事件委托（应用 / 删除 / 保存 / 回车保存） */
+    if (el['preset-panel']) {
+      el['preset-panel'].addEventListener('click', function (ev) {
+        var closest = function (sel) {
+          return ev.target.closest ? ev.target.closest(sel) : null;
+        };
+        var applyBtn = closest('.preset-apply');
+        if (applyBtn) {
+          var items = store.getPresets();
+          var spec = items[Number(applyBtn.getAttribute('data-preset-idx'))];
+          if (!spec) { return; }
+          var applied = player.applyMix(spec);
+          if (!applied.ok) { toast('这个预设暂时无法应用'); }
+          else if (applied.pending) { toast('已载入预设，点击播放生效'); }
+          else { toast('已应用「' + spec.name + '」'); }
+          return;
+        }
+        var delBtn = closest('.preset-delete');
+        if (delBtn) {
+          var delIdx = Number(delBtn.getAttribute('data-preset-idx'));
+          var list0 = store.getPresets();
+          var delName = list0[delIdx] ? list0[delIdx].name : '';
+          var deleted = store.deletePreset(delIdx);
+          lastPresetSignature = '';
+          renderPresetPanel();
+          if (deleted.ok) { toast('已删除预设「' + delName + '」'); }
+          return;
+        }
+        if (closest('#btn-preset-save')) { saveCurrentMix(); }
+      });
+      el['preset-panel'].addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter') { return; }
+        if (!ev.target || ev.target.id !== 'preset-name-input') { return; }
+        ev.preventDefault();
+        saveCurrentMix();
+      });
+    }
 
     /* 声音库：事件委托（筛选 + 点选曲目），避免逐条绑定 30 个按钮 */
     el['library-panel'].addEventListener('click', function (ev) {
       var closest = function (sel) {
         return ev.target.closest ? ev.target.closest(sel) : null;
       };
+      /* 只看收藏：独立开关，不属于场景/类型 chip 组 */
+      if (closest('#btn-fav-only')) {
+        onlyFavorites = !onlyFavorites;
+        lastLibSignature = '';
+        renderLibraryPanel();
+        toast(onlyFavorites ? '只看收藏' : '显示全部曲目');
+        return;
+      }
+      /* 星标：收藏 / 取消收藏（与点选曲目互不干扰，星标不在 .lib-track 内） */
+      var favBtn = closest('[data-fav-id]');
+      if (favBtn) {
+        var favId = favBtn.getAttribute('data-fav-id');
+        var row = favBtn.parentNode;
+        var rowTrack = row ? row.querySelector('[data-lib-track]') : null;
+        var favName = rowTrack ? rowTrack.getAttribute('data-lib-name') : '';
+        var favRes = store.toggleFavorite(favId);
+        if (favRes.ok) {
+          lastLibSignature = '';
+          renderLibraryPanel();
+          toast(favRes.favorite ? '已收藏「' + favName + '」' : '已取消收藏「' + favName + '」');
+          /* 重建后把焦点还给同一颗星，键盘操作不丢位（逐项比对，不拼选择器） */
+          var stars = el['library-panel'].querySelectorAll('[data-fav-id]');
+          for (var si = 0; si < stars.length; si += 1) {
+            if (stars[si].getAttribute('data-fav-id') === favId) { stars[si].focus(); break; }
+          }
+        } else if (favRes.reason === 'limit') {
+          toast('收藏已达上限（' + C.MAX_FAVORITES + '）');
+        }
+        return;
+      }
       var sceneBtn = closest('[data-lib-scene]');
       if (sceneBtn) {
         setLibraryFilter(sceneBtn.getAttribute('data-lib-scene'), null);
@@ -756,6 +946,9 @@
     getUiSnapshot: getUiSnapshot,
     setBrightness: setBrightness,
     getLibrarySnapshot: getLibrarySnapshot,
-    setLibraryFilter: setLibraryFilter
+    setLibraryFilter: setLibraryFilter,
+    /* P0-2 收藏与预设只读快照（白名单过滤后，不含内部引用） */
+    getFavoritesSnapshot: getFavoritesSnapshot,
+    getPresetsSnapshot: getPresetsSnapshot
   };
 })();

@@ -26,6 +26,8 @@
   var mainUpgradeToken = 0;
   var currentMainTrackId = null;
   var currentMainUrl = null;
+  var pendingMix = null;          // P0-2：未启动时缓存的混音配置（首次手势后落地）
+  var extraSeq = 0;               // 追加槽位的唯一后缀（同毫秒内多次追加不撞 id）
   var activeDegradeStart = null;
   var driftTimer = null;
   var progress = { currentTime: 0, duration: 0 };
@@ -448,8 +450,12 @@
       if (preset.timerMinutes > 0) { SW.timer.start(preset.timerMinutes, preset.fadeSeconds); }
       else { SW.timer.cancel(); }
       store.savePrefs();
-      /* 并行升级：不阻塞「先出声」 */
-      upgradeMain(defaultMainTrackId(), ++mainUpgradeToken);
+      /* P0-2 / P0-3：预设或分享链接待落地的混音只在首次手势后生效，绝不提前出声 */
+      var pending = pendingMix;
+      pendingMix = null;
+      var pendingMainId = pending ? applyPendingMix(pending) : null;
+      /* 并行升级：不阻塞「先出声」；待落地混音指定了主音轨则沿用它（全程只此一次） */
+      upgradeMain(pendingMainId || defaultMainTrackId(), ++mainUpgradeToken);
     }).catch(function (err) {
       /* 异常在模块内吞掉；合成层若已建立则保持播放态，绝不出现「点了没反应」 */
       store.pushLog({ type: 'play', action: 'start-degraded', reason: String(err && err.message || 'unknown') });
@@ -551,6 +557,188 @@
     return Promise.resolve();
   }
 
+  /* —— P0-2 混音预设：保存 / 还原「场景 + 主音量 + ≤3 条轨」—————————————
+     关键前提（F-6）：applyScene() 会用场景处方覆盖 tracks / masterVolume /
+     brightness / breath，所以预设只能在 applyScene() 返回之后叠加；本文件
+     不修改 applyScene 的既有语义（保护既有断言）。
+     未启动时（AudioContext 尚未创建）一律先缓存成 pendingMix，等首次用户手势
+     的 startFromGesture() 内一次性落地——绝不提前出声（硬边界 3）。 */
+
+  /** 音量保留两位小数（与 store 的持久化口径一致）。 */
+  function round2(value) { return Math.round(value * 100) / 100; }
+
+  /**
+   * 用当前实时槽位生成可持久化的混音描述（不含 display / url / 时间戳）。
+   * @returns {{scene:string, masterVolume:number, tracks:Object[]}}
+   */
+  function getMixSpec() {
+    var st = store.getState();
+    var out = { scene: st.scene, masterVolume: round2(st.masterVolume), tracks: [] };
+
+    function pushSlot(s) {
+      if (!s || out.tracks.length >= C.MAX_TRACKS) { return; }
+      if (s.kind === 'audio' && s.trackId) {
+        out.tracks.push({ kind: 'track', trackId: s.trackId, volume: round2(s.volume) });
+      } else if (s.voice) {
+        out.tracks.push({ kind: 'voice', voice: s.voice, volume: round2(s.volume) });
+      }
+    }
+
+    /* 已启动：以运行时槽位为准（syncSlots 保证与 store.tracks 同源）。 */
+    if (slots.length) {
+      slots.forEach(pushSlot);
+      return out;
+    }
+    /* 未启动：运行时槽位尚未建立，但「保存预设 / 生成分享链接」必须仍然有意义。
+       优先级 pendingMix（刚应用的预设/分享配置）> 场景处方（按下播放后实际会发声的内容）。
+       否则首播前的保存会因 tracks 为空被拒绝，分享链接也会丢掉整段混音。 */
+    if (pendingMix && pendingMix.tracks && pendingMix.tracks.length) {
+      pendingMix.tracks.forEach(function (t) {
+        if (out.tracks.length >= C.MAX_TRACKS) { return; }
+        out.tracks.push(Object.assign({}, t));
+      });
+      return out;
+    }
+    buildSceneSlots(st.scene).forEach(function (s) {
+      if (out.tracks.length >= C.MAX_TRACKS) { return; }
+      if (s.trackId) {
+        out.tracks.push({ kind: 'track', trackId: s.trackId, volume: round2(s.volume) });
+      } else if (s.voice) {
+        out.tracks.push({ kind: 'voice', voice: s.voice, volume: round2(s.volume) });
+      }
+    });
+    return out;
+  }
+
+  /**
+   * 防御性归一混音描述。结构不可用时返回 null（调用方回报 reason:'spec'）。
+   * @param {Object} spec
+   * @returns {Object|null}
+   */
+  function sanitizeMix(spec) {
+    if (!spec || typeof spec !== 'object') { return null; }
+    if (C.SCENE_IDS.indexOf(spec.scene) < 0) { return null; }
+    if (typeof spec.masterVolume !== 'number' || !isFinite(spec.masterVolume)) { return null; }
+    if (!Array.isArray(spec.tracks)) { return null; }
+    var tracks = [];
+    for (var i = 0; i < spec.tracks.length && tracks.length < C.MAX_TRACKS; i += 1) {
+      var t = spec.tracks[i];
+      if (!t || typeof t !== 'object') { continue; }
+      var volume = Math.max(0, Math.min(1, Number(t.volume)));
+      if (!isFinite(volume)) { volume = 0; }
+      volume = round2(volume);
+      if (t.kind === 'track') {
+        if (typeof t.trackId !== 'string' || !t.trackId.trim()) { continue; }
+        tracks.push({ kind: 'track', trackId: t.trackId.trim(), volume: volume });
+      } else if (t.kind === 'voice') {
+        if (C.SYNTH_VOICES.indexOf(t.voice) < 0) { continue; }
+        tracks.push({ kind: 'voice', voice: t.voice, volume: volume });
+      }
+    }
+    if (spec.tracks.length && !tracks.length) { return null; }
+    return {
+      scene: spec.scene,
+      masterVolume: round2(Math.max(0, Math.min(1, spec.masterVolume))),
+      tracks: tracks
+    };
+  }
+
+  /**
+   * 未启动时只改「配置态」：场景与处方字段落到 store，界面同步反映，
+   * 但不建 AudioContext、不出声。播放时由 startFromGesture 落地。
+   */
+  function applySceneConfigOnly(scene) {
+    var preset = C.SCENES[scene];
+    if (!preset) { return; }
+    store.patch({
+      scene: scene,
+      brightness: preset.brightness,
+      breath: preset.breath,
+      timerPresetMinutes: preset.timerMinutes,
+      timerPresetFade: preset.fadeSeconds
+    });
+    store.savePrefs();
+  }
+
+  /** 按索引补齐缺失的声景槽位（只追加 voice，触顶即停）。 */
+  function fillMissingSlots(mix) {
+    var cursor = slots.length;
+    while (cursor < mix.tracks.length) {
+      var want = mix.tracks[cursor];
+      if (!want || want.kind !== 'voice') { cursor += 1; continue; }
+      if (!addTrack(want.voice).ok) { break; }
+      cursor += 1;
+    }
+  }
+
+  /** 收敛到预设轨数：从尾部移除多余槽位（永不删除 main）。 */
+  function trimSlots(count) {
+    var guard = 0;
+    while (slots.length > count && guard < C.MAX_TRACKS + 2) {
+      guard += 1;
+      var last = slots[slots.length - 1];
+      if (!last || last.id === 'main') { break; }
+      removeTrack(last.id);
+    }
+  }
+
+  /** 逐槽音量（按索引对齐）+ 主音量。 */
+  function applyMixVolumes(mix) {
+    var i;
+    for (i = 0; i < slots.length && i < mix.tracks.length; i += 1) {
+      setTrackVolume(slots[i].id, mix.tracks[i].volume);
+    }
+    setMasterVolume(mix.masterVolume);
+  }
+
+  /**
+   * 首次手势后落地 pendingMix：槽位已由 buildSceneSlots 建好，这里只做收敛 + 音量。
+   * 主音轨不在此处加载，而是由调用方交给唯一一次 upgradeMain（避免重复加载）。
+   * 若首轨是声景（合成层兜底时的垫声），主槽位本就是同场景同一垫声，无需重建声源。
+   * @param {Object} mix
+   * @returns {string|null} 预设指定的主音轨 id
+   */
+  function applyPendingMix(mix) {
+    trimSlots(mix.tracks.length);
+    fillMissingSlots(mix);
+    applyMixVolumes(mix);
+    var first = mix.tracks[0];
+    if (first && first.kind === 'track' && first.trackId) {
+      /* 与 switchMainTrack 同一口径：先把主槽位指向目标曲目（垫声仍在播，
+         在线音源由调用方的唯一一次 upgradeMain 接上），避免「正在播放」短暂错配 */
+      patchMainSlot({
+        kind: 'synth', trackId: first.trackId, url: null, display: displayOf(first.trackId)
+      });
+      return first.trackId;
+    }
+    return null;
+  }
+
+  /**
+   * 应用一份混音描述（预设 / 分享链接共用）。
+   * 未启动：缓存为 pendingMix，返回 {ok:true, pending:true}，绝不创建 AudioContext。
+   * 已启动：applyScene → 主音轨 → 删多余槽位 → 补声景槽位 → 逐槽音量 → 主音量。
+   * @param {Object} spec
+   * @returns {{ok:boolean, pending?:boolean, reason?:string}}
+   */
+  function applyMix(spec) {
+    var mix = sanitizeMix(spec);
+    if (!mix) { return { ok: false, reason: 'spec' }; }
+    if (!started) {
+      if (mix.scene !== store.getState().scene) { applySceneConfigOnly(mix.scene); }
+      store.patch({ masterVolume: mix.masterVolume });
+      pendingMix = mix;
+      return { ok: true, pending: true };
+    }
+    if (mix.scene !== store.getState().scene) { applyScene(mix.scene); }
+    var first = mix.tracks[0];
+    if (first && first.kind === 'track' && first.trackId) { selectTrack(first.trackId); }
+    trimSlots(mix.tracks.length);
+    fillMissingSlots(mix);
+    applyMixVolumes(mix);
+    return { ok: true, pending: false };
+  }
+
   /** 主音量（0..1）。 */
   function setMasterVolume(v) {
     var value = Math.max(0, Math.min(1, Number(v) || 0));
@@ -582,7 +770,12 @@
       store.emit(E.TOAST, { message: '已达 3 条声景上限，先移除一条再添加' });
       return { ok: false, reason: 'limit' };
     }
+    /* 时间戳精度只到毫秒：还原预设时同一 tick 内可能连加两条，必须再加序号防撞 id */
     var id = 'extra-' + Date.now().toString(36);
+    while (findSlot(id)) {
+      extraSeq += 1;
+      id = 'extra-' + Date.now().toString(36) + '-' + extraSeq.toString(36);
+    }
     var label = C.VOICE_LABELS[voice] || displayOf(voice);
     var slot = { id: id, kind: 'synth', voice: voice, trackId: null, volume: 0.30, display: label, url: null };
     slots.push(slot);
@@ -788,6 +981,9 @@
     getProgress: getProgress,
     getBadgeState: getBadgeState,
     setAutoDrift: setAutoDrift,
+    /* P0-2 混音预设：生成 / 应用（P0-3 分享链接复用同一对方法） */
+    getMixSpec: getMixSpec,
+    applyMix: applyMix,
     debugForceTier: debugForceTier,
     debugForceOffline: debugForceOffline,
     debugInjectFailure: debugInjectFailure

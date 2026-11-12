@@ -101,6 +101,189 @@
     try { window.localStorage.removeItem(key); } catch (err) { /* 静默 */ }
   }
 
+  /* —— P0-2 收藏与混音预设：本层只负责持久化，不碰 UI、不调播放器 ———————
+     分层约定：store.js 不依赖 sources.js，因此这里只校验「结构 / 类型 / 取值范围」，
+     不校验曲目 id 是否仍在曲库白名单内；白名单过滤由 ui.js 在读取时静默完成
+     （曲目下线不会让面板报错，也不会误删用户收藏）。
+     所有读取均包 try/catch：键缺失、JSON 损坏、顶层非对象、v !== 1 一律视为空集。 */
+
+  var favoritesCache = null;
+  var presetsCache = null;
+
+  /** 音量归一：非法值归 0，钳制 0..1，保留两位小数。 */
+  function normalizeVolume(value) {
+    var n = Number(value);
+    if (!isFinite(n)) { return 0; }
+    return Math.round(Math.max(0, Math.min(1, n)) * 100) / 100;
+  }
+
+  /** 名称归一：去控制字符、去首尾空白、截断至 MAX_PRESET_NAME。 */
+  function normalizeName(value) {
+    if (typeof value !== 'string') { return ''; }
+    return value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, C.MAX_PRESET_NAME);
+  }
+
+  /** 读取收藏 id 列表（去重、截断至上限，永不抛错）。 */
+  function readFavorites() {
+    try {
+      var raw = readStorage(K.favorites);
+      if (!raw || typeof raw !== 'object' || raw.v !== 1 || !Array.isArray(raw.ids)) { return []; }
+      var out = [];
+      for (var i = 0; i < raw.ids.length; i += 1) {
+        var id = raw.ids[i];
+        if (typeof id !== 'string') { continue; }
+        id = id.trim();
+        if (!id || out.indexOf(id) >= 0) { continue; }
+        out.push(id);
+        if (out.length >= C.MAX_FAVORITES) { break; }
+      }
+      return out;
+    } catch (err) {
+      return [];
+    }
+  }
+
+  /** 收藏 id 列表（永远是数组副本，调用方改写不影响内部状态）。 */
+  function getFavorites() {
+    if (!favoritesCache) { favoritesCache = readFavorites(); }
+    return favoritesCache.slice();
+  }
+
+  /** 是否已收藏。 */
+  function isFavorite(trackId) {
+    if (typeof trackId !== 'string' || !trackId) { return false; }
+    return getFavorites().indexOf(trackId) >= 0;
+  }
+
+  /** 切换收藏；失败返回 {ok:false, reason}，绝不抛错。 */
+  function toggleFavorite(trackId) {
+    if (typeof trackId !== 'string' || !trackId.trim()) {
+      return { ok: false, favorite: false, reason: 'id' };
+    }
+    var id = trackId.trim();
+    var ids = getFavorites();
+    var idx = ids.indexOf(id);
+    if (idx >= 0) {
+      ids.splice(idx, 1);
+    } else {
+      if (ids.length >= C.MAX_FAVORITES) {
+        return { ok: false, favorite: false, reason: 'limit' };
+      }
+      ids.push(id);
+    }
+    writeStorage(K.favorites, { v: 1, ids: ids });
+    favoritesCache = ids;
+    return { ok: true, favorite: idx < 0 };
+  }
+
+  /** 校验并归一单条预设轨道；非法条目返回 null（静默丢弃该条）。 */
+  function normalizePresetTrack(entry) {
+    if (!entry || typeof entry !== 'object') { return null; }
+    var volume = normalizeVolume(entry.volume);
+    if (entry.kind === 'track') {
+      if (typeof entry.trackId !== 'string' || !entry.trackId.trim()) { return null; }
+      return { kind: 'track', trackId: entry.trackId.trim(), volume: volume };
+    }
+    if (entry.kind === 'voice') {
+      if (C.SYNTH_VOICES.indexOf(entry.voice) < 0) { return null; }
+      return { kind: 'voice', voice: entry.voice, volume: volume };
+    }
+    return null;
+  }
+
+  /**
+   * 校验并归一单条预设（只保留 id / voice / volume / scene / masterVolume）。
+   * @param {Object} spec
+   * @returns {{ok:boolean, value?:Object, reason?:string}}
+   */
+  function normalizePreset(spec) {
+    if (!spec || typeof spec !== 'object') { return { ok: false, reason: 'spec' }; }
+    var name = normalizeName(spec.name);
+    if (!name) { return { ok: false, reason: 'name' }; }
+    if (C.SCENE_IDS.indexOf(spec.scene) < 0) { return { ok: false, reason: 'scene' }; }
+    if (!Array.isArray(spec.tracks)) { return { ok: false, reason: 'tracks' }; }
+    var tracks = [];
+    for (var i = 0; i < spec.tracks.length && tracks.length < C.MAX_TRACKS; i += 1) {
+      var t = normalizePresetTrack(spec.tracks[i]);
+      if (t) { tracks.push(t); }
+    }
+    if (!tracks.length) { return { ok: false, reason: 'tracks' }; }
+    return {
+      ok: true,
+      value: {
+        name: name,
+        scene: spec.scene,
+        masterVolume: normalizeVolume(spec.masterVolume),
+        tracks: tracks
+      }
+    };
+  }
+
+  /** 深拷贝单条预设（绝不把内部引用交给调用方）。 */
+  function copyPreset(p) {
+    var tracks = [];
+    var i;
+    for (i = 0; i < p.tracks.length; i += 1) {
+      if (p.tracks[i].kind === 'track') {
+        tracks.push({ kind: 'track', trackId: p.tracks[i].trackId, volume: p.tracks[i].volume });
+      } else if (p.tracks[i].kind === 'voice') {
+        tracks.push({ kind: 'voice', voice: p.tracks[i].voice, volume: p.tracks[i].volume });
+      }
+    }
+    return { name: p.name, scene: p.scene, masterVolume: p.masterVolume, tracks: tracks };
+  }
+
+  /** 读取预设列表（逐条校验，非法条目静默丢弃，永不抛错）。 */
+  function readPresets() {
+    try {
+      var raw = readStorage(K.presets);
+      if (!raw || typeof raw !== 'object' || raw.v !== 1 || !Array.isArray(raw.items)) { return []; }
+      var out = [];
+      for (var i = 0; i < raw.items.length && out.length < C.MAX_PRESETS; i += 1) {
+        var res = normalizePreset(raw.items[i]);
+        if (res.ok) { out.push(res.value); }
+      }
+      return out;
+    } catch (err) {
+      return [];
+    }
+  }
+
+  /** 预设列表（深拷贝，调用方改写不影响内部状态）。 */
+  function getPresets() {
+    if (!presetsCache) { presetsCache = readPresets(); }
+    var out = [];
+    for (var i = 0; i < presetsCache.length; i += 1) { out.push(copyPreset(presetsCache[i])); }
+    return out;
+  }
+
+  /** 保存预设；数量满、名称非法、场景非法、轨道非法均返回 {ok:false, reason}。 */
+  function savePreset(spec) {
+    var items = getPresets();
+    if (items.length >= C.MAX_PRESETS) {
+      return { ok: false, reason: 'limit', count: items.length };
+    }
+    var res = normalizePreset(spec);
+    if (!res.ok) { return { ok: false, reason: res.reason, count: items.length }; }
+    items.push(copyPreset(res.value));
+    writeStorage(K.presets, { v: 1, items: items });
+    presetsCache = items;
+    return { ok: true, count: items.length };
+  }
+
+  /** 按索引删除预设；索引非法只回报当前数量，不抛错。 */
+  function deletePreset(index) {
+    var items = getPresets();
+    var idx = Number(index);
+    if (!isFinite(idx) || idx < 0 || idx >= items.length || Math.floor(idx) !== idx) {
+      return { ok: false, count: items.length };
+    }
+    items.splice(idx, 1);
+    writeStorage(K.presets, { v: 1, items: items });
+    presetsCache = items;
+    return { ok: true, count: items.length };
+  }
+
   /** 返回状态快照（浅拷贝 + 关键嵌套对象拷贝，避免外部改写）。 */
   function getState() {
     var snap = Object.assign({}, state);
@@ -213,13 +396,18 @@
   function savePrefs() { writeStorage(K.prefs, collectPrefs()); }
 
   /**
-   * 清除本地设置：清三个键并恢复出厂默认（P0-09 / P0-12）。
+   * 清除本地设置：清全部存储键并恢复出厂默认（P0-09 / P0-12 / P0-2）。
+   * 收藏与预设必须一并清除，否则会出现「点了清除但收藏还在」（F-5）。
    * 保留环境相关字段（debug / reducedMotion / resolvedRemotes）。
    */
   function clearAll() {
     removeStorage(K.prefs);
     removeStorage(K.health);
     removeStorage(K.manifest);
+    removeStorage(K.favorites);
+    removeStorage(K.presets);
+    favoritesCache = null;
+    presetsCache = null;
     memory = Object.create(null);
     var env = {
       debug: C.DEBUG,
@@ -245,6 +433,13 @@
     clearAll: clearAll,
     pushLog: pushLog,
     getLog: getLog,
+    /* P0-2 收藏与混音预设（只做持久化；白名单过滤在 ui.js） */
+    getFavorites: getFavorites,
+    isFavorite: isFavorite,
+    toggleFavorite: toggleFavorite,
+    getPresets: getPresets,
+    savePreset: savePreset,
+    deletePreset: deletePreset,
     /* 以下三个为供 sources.js 复用的持久化底层（契约所必需的扩展） */
     readStorage: readStorage,
     writeStorage: writeStorage,

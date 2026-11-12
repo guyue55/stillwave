@@ -67,7 +67,7 @@ def build_summary(round_dir: str, phase: str, round_no: int,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", choices=["preflight", "full"], default="full")
-    ap.add_argument("--round", type=int, default=1, choices=[1, 2, 3, 4])
+    ap.add_argument("--round", type=int, default=1, choices=[1, 2, 3, 4, 5])
     ap.add_argument("--only", choices=SUITES, default=None,
                     help="只运行指定套件（用于第 2 轮定向回归）")
     ap.add_argument("--no-audio", action="store_true")

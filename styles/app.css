@@ -363,11 +363,65 @@ html[data-brightness="extreme"] .footer { border-color: var(--c-border); }
   .lib-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* ---------- 收藏星标与我的预设（P0-2，全部复用既有令牌） ---------- */
+.lib-flag-row { margin: 0 0 var(--sp-2); }
+.lib-chip-standalone { flex: none; }
+.lib-row { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.lib-row .lib-track { flex: 1 1 auto; min-width: 0; }
+.lib-fav {
+  flex: none; min-width: var(--touch); min-height: var(--touch);
+  padding: 0; border: 1px solid var(--c-border); border-radius: var(--radius);
+  background: var(--c-surface); color: var(--c-text-2);
+  font: inherit; font-size: 16px; line-height: 1; cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease),
+              background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.lib-fav:hover, .lib-fav:focus-visible { border-color: var(--c-primary); background: var(--c-surface-2); }
+.lib-fav[aria-pressed="true"] { border-color: var(--c-primary); color: var(--c-primary-soft); }
+
+.preset-panel {
+  margin-top: var(--sp-3); padding: var(--sp-3);
+  border: 1px solid var(--c-border); border-radius: var(--radius);
+  background: var(--c-bg-soft); font-size: var(--fz-small); color: var(--c-text-2);
+  max-height: 46vh; overflow-y: auto; overscroll-behavior: contain;
+}
+.preset-panel h3 { font-size: 14px; color: var(--c-text); margin: 0 0 var(--sp-2); }
+.preset-list {
+  list-style: none; margin: 0 0 var(--sp-3); padding: 0;
+  display: grid; grid-template-columns: 1fr; gap: var(--sp-2);
+}
+.preset-item { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex-wrap: wrap; }
+.preset-name { flex: 1 1 8em; min-width: 0; color: var(--c-text); overflow-wrap: anywhere; }
+.preset-apply, .preset-delete {
+  flex: none; min-height: var(--touch); min-width: var(--touch);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--c-border); border-radius: var(--radius);
+  background: var(--c-surface); color: var(--c-text);
+  font: inherit; font-size: var(--fz-small); cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease),
+              background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.preset-apply { border-color: var(--c-primary); color: var(--c-primary-soft); }
+.preset-apply:hover, .preset-apply:focus-visible,
+.preset-delete:hover, .preset-delete:focus-visible {
+  border-color: var(--c-primary); background: var(--c-surface-2);
+}
+.preset-save-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.preset-input {
+  flex: 1 1 160px; min-width: 0; min-height: var(--touch);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--c-border); border-radius: var(--radius);
+  background: var(--c-bg); color: var(--c-text); font: inherit; font-size: var(--fz-small);
+}
+.preset-input::placeholder { color: var(--c-text-3); }
+.preset-input:focus-visible { border-color: var(--c-primary); }
+
 /* ---------- 减少动效：圆环与光晕停动画，呼吸改静态文字（P1-01） ---------- */
 @media (prefers-reduced-motion: reduce) {
   .glow, .badge[data-state="refreshing"] .badge-dot { animation: none !important; }
   .ring-circle { transition: none !important; transform: scale(0.88) !important; }
   .progress-fill { transition: none !important; }
   .toast { transition: none !important; }
-  .lib-chip, .lib-track { transition: none !important; }
+  .lib-chip, .lib-track, .lib-fav,
+  .preset-apply, .preset-delete, .preset-input { transition: none !important; }
 }

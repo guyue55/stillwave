@@ -95,11 +95,17 @@
     TOAST: 'sw:toast'
   };
 
-  /** 存储键（§8.6，仅三个，全部 localStorage）。 */
+  /**
+   * 存储键（§8.6，全部 localStorage）。
+   * favorites / presets 为 P0-2 新增：收藏曲目 id 与自定义混音预设，
+   * 结构均带 v:1，读取时版本不符即视为空集（§7.1）。
+   */
   var STORAGE_KEYS = {
     prefs: 'sw.prefs.v1',
     health: 'sw.health.v1',
-    manifest: 'sw.manifest.v1'
+    manifest: 'sw.manifest.v1',
+    favorites: 'sw.favorites.v1',
+    presets: 'sw.presets.v1'
   };
 
   /** L3 动态发现的标题黑名单（S-05 / D6 / AD-10）。 */
@@ -197,6 +203,9 @@
     RADIO_TIMEOUT_MS: 5000,
     CROSSFADE_MS: 600,
     MAX_TRACKS: 3,
+    MAX_PRESETS: 20,
+    MAX_PRESET_NAME: 24,
+    MAX_FAVORITES: 200,
     COOLDOWN_MS: 600000,
     LOG_LIMIT: 200,
     ENABLE_RADIO: false,

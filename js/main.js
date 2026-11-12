@@ -263,6 +263,18 @@
       },
       setLibraryFilter: function (scene, kind) { ui.setLibraryFilter(scene, kind); },
       setMasterVolume: function (v) { player.setMasterVolume(v); },
+      /* P0-2 收藏与混音预设：与用户点击等价，供自动化驱动 */
+      toggleFavorite: function (id) { return store.toggleFavorite(id); },
+      savePreset: function (name) {
+        var mix = player.getMixSpec();
+        var spec = {
+          name: name, scene: mix.scene, masterVolume: mix.masterVolume,
+          tracks: mix.tracks
+        };
+        return store.savePreset(spec);
+      },
+      deletePreset: function (index) { return store.deletePreset(index); },
+      applyMix: function (spec) { return player.applyMix(spec); },
       addTrack: function (voice) {
         if (store.getState().playState === 'idle') {
           return player.startFromGesture().then(function () { return player.addTrack(voice); });
@@ -320,6 +332,10 @@
       getEventLog: function () { return store.getLog(); },
       getUiSnapshot: function () { return ui.getUiSnapshot(); },
       getLibrarySnapshot: function () { return ui.getLibrarySnapshot(); },
+      /* P0-2：收藏与预设的只读快照（白名单投影，不含任何存储内部结构） */
+      getFavoritesSnapshot: function () { return ui.getFavoritesSnapshot(); },
+      getPresetsSnapshot: function () { return ui.getPresetsSnapshot(); },
+      getMixSpec: function () { return player.getMixSpec(); },
       getAttribution: function (trackId) { return sources.getAttribution(trackId); },
       getManifestSummary: function () { return sources.getManifestSummary(); },
       /* v1.1 / A13 / A14 新增四个数据层契约入口 */
