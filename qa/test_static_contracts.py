@@ -433,6 +433,64 @@ def run(phase: str = "full") -> Suite:
             "ui.js 缺失=%s originalTitle=%d；main.js 缺失=%s"
             % (ui_lib_missing, ui_js.count("originalTitle"), main_missing))
 
+    # ---- ST-28 设计令牌对比度（WCAG AA 实算，P0-4a） --------------------
+    # 背景：--c-text-3 原值 #6d807c 在 --c-surface 上仅 3.91:1、--c-bg 上 4.44:1，
+    # 低于正文 4.5:1。此处用与浏览器无关的 WCAG 相对亮度公式实算，避免靠观感判断。
+    tokens_css = read_text("styles/tokens.css")
+
+    def _tok(name, block=None):
+        src = tokens_css if block is None else block
+        m = re.search(r'--' + re.escape(name) + r'\s*:\s*(#[0-9a-fA-F]{6})', src)
+        return m.group(1) if m else None
+
+    def _lum(hx):
+        h = hx.lstrip('#')
+        ch = [int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
+        ch = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+              for c in ch]
+        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+    def _ratio(fg, bg):
+        a, b = _lum(fg), _lum(bg)
+        hi, lo = max(a, b), min(a, b)
+        return (hi + 0.05) / (lo + 0.05)
+
+    ex_block = ""
+    m_ex = re.search(r'html\[data-brightness="extreme"\]\s*\{(.*?)\}', tokens_css, re.S)
+    if m_ex:
+        ex_block = m_ex.group(1)
+    bg = _tok("c-bg")
+    surf = _tok("c-surface")
+    surf2 = _tok("c-surface-2") or surf
+    ex_bg = _tok("c-bg", ex_block) or bg
+    contrast_rows = []
+    for name, minimum in (("c-text", 4.5), ("c-text-2", 4.5),
+                          ("c-text-3", 4.5), ("c-primary-soft", 4.5)):
+        fg = _tok(name)
+        for label, back in (("bg", bg), ("surface", surf), ("surface-2", surf2)):
+            if fg and back:
+                contrast_rows.append((name, label, _ratio(fg, back), minimum))
+    for name in ("c-primary", "c-primary-soft"):
+        fg = _tok(name)
+        for label, back in (("bg", bg), ("surface", surf)):
+            if fg and back:
+                contrast_rows.append((name + "/控件焦点", label,
+                                      _ratio(fg, back), 3.0))
+    for name in ("c-text-2", "c-text-3"):
+        fg = _tok(name)
+        if fg and ex_bg:
+            contrast_rows.append((name + "/极暗档", "extreme-bg",
+                                  _ratio(fg, ex_bg), 4.5))
+    contrast_bad = [r for r in contrast_rows if r[2] < r[3]]
+    contrast_ok = bool(contrast_rows) and not contrast_bad
+    s.check("ST-28", "设计令牌对比度实算达标（正文 4.5:1 / 控件焦点 3:1）",
+            "P0-4a / A5 / NFR-06 / WCAG 1.4.3+1.4.11", contrast_ok,
+            "全部令牌配对满足阈值；--c-text-3 在 surface/surface-2/bg/极暗档均 ≥4.5",
+            "不达标=%s | 样例=%s"
+            % (["%s@%s=%.2f<%.1f" % (n, l, r, t) for n, l, r, t in contrast_bad][:6],
+               " ".join("%s@%s=%.2f" % (n, l, r)
+                        for n, l, r, t in contrast_rows[:5])))
+
     # ---- 记录元数据 -----------------------------------------------------
     s.artifacts["manifest"] = {
         "schema": manifest.get("schema"), "version": manifest.get("version"),

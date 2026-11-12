@@ -15,7 +15,10 @@
   --c-primary-soft: #9bc2ba;
   --c-text: #e6edea;
   --c-text-2: #8a9a96;
-  --c-text-3: #6d807c;
+  /* 三级文字：必须满足 WCAG AA 正文 4.5:1。原值 #6d807c 在 --c-surface 上仅 3.91:1、
+     在 --c-bg 上仅 4.44:1，均不合格（实算，见 docs/06-optimization-plan.md §6.1）。
+     现值实测：#172128→5.12:1，#1c272e→4.77:1，#0e1418→5.81:1。 */
+  --c-text-3: #82948f;
   --c-online: #7fa8a0;
   --c-backup: #b79b6e;
   --c-synth: #8093a0;
