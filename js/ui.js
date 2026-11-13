@@ -66,7 +66,7 @@
       'custom-minutes', 'btn-custom-timer', 'timer-remaining', 'btn-cancel-timer',
       'lib-status', 'btn-details', 'details-panel', 'btn-library', 'library-panel',
       'btn-presets', 'preset-panel',
-      'btn-drift', 'btn-clear', 'toast'
+      'btn-drift', 'btn-clear', 'btn-share', 'share-panel', 'toast'
     ].forEach(function (id) { el[id] = document.getElementById(id); });
     el.ringCircle = el['breath-ring'] ? el['breath-ring'].querySelector('.ring-circle') : null;
     el.tabs = el['scene-tabs'] ? Array.prototype.slice.call(el['scene-tabs'].querySelectorAll('.tab')) : [];
@@ -654,6 +654,155 @@
     return Promise.resolve();
   }
 
+  /* —— P0-3 分享链接：编码 → 写地址栏 → 复制（三级回退）———————————————
+     硬边界：整条流程只读 player.getMixSpec()，绝不调 play()/start()，
+     也不创建 AudioContext（#btn-share 已在 main.js 的首次手势钩子里排除）。
+     复制三级：clipboard.writeText → execCommand('copy') → 展开 #share-panel，
+     把只读输入框留在页面上并选中（用户按 Ctrl/⌘+C 即可）。
+     面板只承载「手动复制兜底」，因此 aria-expanded 恒等于面板真实显隐，绝不说谎。 */
+
+  /** 分享链接的绝对地址：http(s) 用 origin + pathname；file:// 用 href 去掉 hash 段。 */
+  function shareUrlOf(hash) {
+    try {
+      var loc = window.location;
+      if (loc.protocol === 'file:') { return String(loc.href).split('#')[0] + hash; }
+      return String(loc.origin) + String(loc.pathname) + hash;
+    } catch (err) {
+      return hash;
+    }
+  }
+
+  /** 生成当前配置的分享 hash（编码逻辑只在 main.js 一处，避免两端格式漂移）。 */
+  function currentShareHash() {
+    try {
+      if (SW.main && typeof SW.main.getShareHash === 'function') {
+        return SW.main.getShareHash(player.getMixSpec());
+      }
+    } catch (err) { /* 静默：编码失败按复制失败处理 */ }
+    return '';
+  }
+
+  /** 写地址栏：replaceState 不新增历史记录（不污染后退按钮）；受限环境静默跳过。 */
+  function writeShareHash(hash) {
+    try {
+      if (!window.history || typeof window.history.replaceState !== 'function') { return false; }
+      var loc = window.location;
+      window.history.replaceState(null, '', String(loc.pathname) + String(loc.search) + hash);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /** 收起手动复制面板并同步 aria-expanded（面板不存在时静默）。 */
+  function closeSharePanel() {
+    if (!el['share-panel']) { return; }
+    el['share-panel'].hidden = true;
+    if (el['btn-share']) { el['btn-share'].setAttribute('aria-expanded', 'false'); }
+  }
+
+  /**
+   * 展开手动复制面板并渲染链接：只用 createElement / textContent（绝不拼 innerHTML），
+   * 只读输入框写入 value 属性、选中并聚焦。返回输入框（面板缺失时返回 null）。
+   * @param {string} url
+   * @returns {HTMLInputElement|null}
+   */
+  function selectShareText(url) {
+    var panel = el['share-panel'];
+    if (!panel) { return null; }
+    while (panel.firstChild) { panel.removeChild(panel.firstChild); }
+
+    var hint = document.createElement('p');
+    hint.className = 'share-hint';
+    hint.textContent = '链接只包含场景、主音量与混音轨，不含任何个人信息。打开即还原配置，不会自动播放。';
+    panel.appendChild(hint);
+
+    var input = document.createElement('input');
+    input.id = 'share-fallback-input';
+    input.type = 'text';
+    input.className = 'share-fallback';
+    input.readOnly = true;
+    input.value = url;
+    input.setAttribute('aria-label', '分享链接，可手动复制');
+    panel.appendChild(input);
+
+    var close = document.createElement('button');
+    close.id = 'btn-share-close';
+    close.type = 'button';
+    close.className = 'ghost-btn';
+    close.textContent = '收起';
+    panel.appendChild(close);
+
+    panel.hidden = false;
+    if (el['btn-share']) { el['btn-share'].setAttribute('aria-expanded', 'true'); }
+    try {
+      input.focus();
+      if (typeof input.setSelectionRange === 'function') { input.setSelectionRange(0, url.length); }
+      input.select();
+    } catch (err) { /* 静默 */ }
+    return input;
+  }
+
+  /**
+   * 回退复制：临时只读输入框 + execCommand('copy')。
+   * 成功也保留选中态——execCommand 的返回值在 file:// / 沙箱下不能当作「已写入剪贴板」的证据，
+   * 保留选中让「按 Ctrl/⌘+C」这句提示永远可执行。
+   * @returns {'exec'|'manual'}
+   */
+  function legacyCopyShare(url) {
+    var input = selectShareText(url);
+    if (!input) { return 'manual'; }
+    if (typeof document.execCommand !== 'function') { return 'manual'; }
+    var copied = false;
+    try { copied = document.execCommand('copy'); } catch (err) { copied = false; }
+    return copied ? 'exec' : 'manual';
+  }
+
+  /**
+   * 写剪贴板（三级回退），返回实际使用的方式。
+   * @param {string} url
+   * @returns {Promise<'clipboard'|'exec'|'manual'>}
+   */
+  function writeShareClipboard(url) {
+    var nav = window.navigator;
+    var clipboard = (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function')
+      ? nav.clipboard : null;
+    if (!clipboard) { return Promise.resolve(legacyCopyShare(url)); }
+    return clipboard.writeText(url).then(function () {
+      closeSharePanel();
+      return 'clipboard';
+    }, function () {
+      /* 权限被拒 / 非安全上下文 / headless 沙箱：降级到 execCommand，绝不外抛 */
+      return legacyCopyShare(url);
+    });
+  }
+
+  /**
+   * 分享当前配置（与点击 #btn-share 等价，供按钮与 QA 契约共用；绝不触发播放）。
+   * @returns {Promise<{ok:boolean, hash:string, url:string, mode:string}>}
+   */
+  function copyShareLink() {
+    var hash = currentShareHash();
+    if (!hash) {
+      toast('复制失败，请手动复制地址栏链接');
+      return Promise.resolve({ ok: false, hash: '', url: '', mode: 'error' });
+    }
+    var url = shareUrlOf(hash);
+    writeShareHash(hash);
+    return writeShareClipboard(url).then(function (mode) {
+      if (mode === 'clipboard') {
+        toast('已复制分享链接，打开即还原当前配置');
+        return { ok: true, hash: hash, url: url, mode: mode };
+      }
+      if (mode === 'exec') {
+        toast('已选中链接，按 Ctrl/⌘+C 复制');
+        return { ok: true, hash: hash, url: url, mode: mode };
+      }
+      toast('复制失败，请手动复制地址栏链接');
+      return { ok: false, hash: hash, url: url, mode: mode };
+    });
+  }
+
   /** 绑定全部 DOM 事件。 */
   function bindEvents() {
     el['btn-play'].addEventListener('click', function () { player.toggle(); });
@@ -802,6 +951,8 @@
     el['btn-add'].addEventListener('click', function () {
       var picker = el['voice-picker'];
       picker.hidden = !picker.hidden;
+      /* P0-4b：展开态同步到触发按钮，读屏才拿得到「已展开/已收起」 */
+      el['btn-add'].setAttribute('aria-expanded', picker.hidden ? 'false' : 'true');
       if (!picker.hidden) { renderVoicePicker(); }
     });
     el['voice-picker'].addEventListener('click', function (ev) {
@@ -817,6 +968,7 @@
         }
       });
       el['voice-picker'].hidden = true;
+      el['btn-add'].setAttribute('aria-expanded', 'false');
     });
 
     /* 呼吸节奏切换 */
@@ -855,6 +1007,18 @@
     });
 
     /* 自动漂移 / 清除本地设置 */
+    if (el['btn-share']) {
+      el['btn-share'].addEventListener('click', function () { copyShareLink(); });
+    }
+    /* 分享面板的「收起」：关面板并把焦点还给触发按钮（键盘流程不断） */
+    if (el['share-panel']) {
+      el['share-panel'].addEventListener('click', function (ev) {
+        var closer = ev.target && ev.target.closest ? ev.target.closest('#btn-share-close') : null;
+        if (!closer) { return; }
+        closeSharePanel();
+        if (el['btn-share']) { el['btn-share'].focus(); }
+      });
+    }
     el['btn-drift'].addEventListener('click', function () {
       var next = !store.getState().autoDrift;
       player.setAutoDrift(next);
@@ -890,6 +1054,48 @@
         ev.preventDefault();
         player.applyScene(C.SCENE_IDS[Number(ev.key) - 1]);
       }
+    });
+
+    /**
+     * P0-4b 键盘收口：Escape 关掉「当前最上层那个展开的面板」并把焦点还给触发按钮。
+     * - 只关一个：从最上层往下找第一个展开的，避免一次 Escape 关掉全部面板，
+     *   也避免用户在输入框里按 Escape 时把整个界面收掉。
+     * - 焦点归还对象就是 aria-controls 指向本面板的那个按钮，符合「从哪来回哪去」。
+     * - 与 P1-06 快捷键独立监听：上面那个 keydown 对 INPUT/TEXTAREA 直接 return，
+     *   Escape 属于「退出」语义，必须连输入框里也生效。
+     */
+    var PANEL_TRIGGERS = [
+      ['share-panel', 'btn-share'],
+      ['voice-picker', 'btn-add'],
+      ['preset-panel', 'btn-presets'],
+      ['library-panel', 'btn-library'],
+      ['details-panel', 'btn-details'],
+      ['info-panel', 'btn-info']
+    ];
+    function closeTopPanel() {
+      var i;
+      for (i = 0; i < PANEL_TRIGGERS.length; i += 1) {
+        var panelId = PANEL_TRIGGERS[i][0];
+        var panel = el[panelId];
+        if (!panel || panel.hidden) { continue; }
+        var trigger = el[PANEL_TRIGGERS[i][1]];
+        if (panelId === 'share-panel') {
+          closeSharePanel();
+        } else {
+          panel.hidden = true;
+        }
+        if (trigger) {
+          trigger.setAttribute('aria-expanded', 'false');
+          try { trigger.focus(); } catch (err) { /* 静默 */ }
+        }
+        return true;
+      }
+      return false;
+    }
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Escape' && ev.key !== 'Esc') { return; }
+      if (ev.altKey || ev.ctrlKey || ev.metaKey) { return; }
+      if (closeTopPanel()) { ev.preventDefault(); }
     });
 
     /* 订阅 store 与领域事件 */
@@ -949,6 +1155,8 @@
     setLibraryFilter: setLibraryFilter,
     /* P0-2 收藏与预设只读快照（白名单过滤后，不含内部引用） */
     getFavoritesSnapshot: getFavoritesSnapshot,
-    getPresetsSnapshot: getPresetsSnapshot
+    getPresetsSnapshot: getPresetsSnapshot,
+    /* P0-3 分享链接：与点击 #btn-share 完全等价（不触发播放） */
+    copyShareLink: copyShareLink
   };
 })();

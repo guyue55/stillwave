@@ -10,17 +10,17 @@
 
 | 项 | 结果 |
 |---|---|
-| 正式断言（formal assertions） | **99 / 99 全部通过（100%）** |
+| 正式断言（formal assertions） | **109 / 109 全部通过（100%）** |
 | 失败（failed） | **0** |
 | 未验证（unverified，环境限制，不计入源码失败） | **10** |
-| 总用例 | 109 |
+| 总用例 | 119 |
 | ROUTE | **NoOne**（无需工程/QA 返工；10 项未验证为跨浏览器与本环境时间限制，非源码缺陷） |
 
 > **口径说明（Round 4，历史留档）**：Round 4（声音库验收轮）的全量结果为 **101 用例 / 91 正式断言 / 0 失败 / 10 未验证**。相较 Round 3 的 91 用例 / 81 正式断言，该轮新增 10 条正式断言（静态 ST-25~ST-27、浏览器 BR-40~BR-46，全部覆盖新增的声音库 P0-1 功能），正式通过率保持 100%。Round 4 明细见 §12。
 
 > **口径说明（Round 5）**：上表已更新为 **Round 5（收藏 + 混音预设验收轮）** 的全量结果。相较 Round 4 的 101 用例 / 91 正式断言，本轮 **+8 用例**（静态 ST-28 设计令牌对比度实算、ST-29 收藏与预设契约；浏览器 BR-50~BR-54，以及守降级态恢复的 BR-55），总用例 109、正式断言 91 → **99**，失败 0、未验证 10 不变。其中 ST-28 来自同期 P0-4a 三级文字对比度修复的闸门补强（Round 4 报告成稿后落地），其余 7 条对应 P0-2 及其暴露出的降级态缺陷。需要明确记录的是：**BR-52 与 BR-55 都不是一开始就绿的**——BR-52 首跑 FAIL，原因是 `applyMix` / `applyPendingMix` 只裁剪轨数、补齐缺失层、按索引对齐音量，从不按 spec 的 `voice` 重建已有槽位，导致预设声景被场景处方静默顶替（`brown` 变 `rain`）；BR-55 首跑 FAIL，暴露降级态主槽位悬空句柄导致「点播放没反应」（§13.6）。两条都经产品可达路径复现、由 `player.js` 修复后才转绿，断言全程未放宽。Round 5 明细与两条缺陷闭环见 §13。
 
-**一句话结论**：在干净算力环境下，站点全部 99 条正式验收断言稳定通过，零源码失败；3 个此前在高负载轮次（Round 2）曾出现的失败经独立复核确认为**纯环境性**（机器负载 41.86 导致首屏 7.3s、在线音源升级未在 9s 内完成），在负载回落（≤8）后全部转 PASS；另有 1 个 30 首批量探测的偶发限流在探针加固后稳定 30/30。剩余 10 个未验证项全部是**跨浏览器启动能力**与 **60 分钟长时浸泡**的本环境/时间限制，已在 §6 逐条如实列出，绝未外推或伪造。Round 4 在 Round 3 基础上把新增的声音库（可浏览/可筛选/可点选）纳入自动化闸门，10 条新断言全部 PASS，且未削弱或改动任何既有用例。Round 5 把收藏与混音预设（P0-2）纳入闸门，连同同期对比度闸门 ST-28 与降级态恢复用例 BR-55 共新增 8 条正式断言；其中 BR-52 抓到「预设声景被场景处方静默顶替」、BR-55 抓到「降级后点播放没反应」，两条都在修复后转绿，本轮最终 99/99、0 失败。
+**一句话结论**：在干净算力环境下，站点全部 109 条正式验收断言稳定通过，零源码失败；3 个此前在高负载轮次（Round 2）曾出现的失败经独立复核确认为**纯环境性**（机器负载 41.86 导致首屏 7.3s、在线音源升级未在 9s 内完成），在负载回落（≤8）后全部转 PASS；另有 1 个 30 首批量探测的偶发限流在探针加固后稳定 30/30。剩余 10 个未验证项全部是**跨浏览器启动能力**与 **60 分钟长时浸泡**的本环境/时间限制，已在 §6 逐条如实列出，绝未外推或伪造。Round 4 在 Round 3 基础上把新增的声音库（可浏览/可筛选/可点选）纳入自动化闸门，10 条新断言全部 PASS，且未削弱或改动任何既有用例。Round 5 把收藏与混音预设（P0-2）纳入闸门，连同同期对比度闸门 ST-28 与降级态恢复用例 BR-55 共新增 8 条正式断言；其中 BR-52 抓到「预设声景被场景处方静默顶替」、BR-55 抓到「降级后点播放没反应」，两条都在修复后转绿，本轮最终 99/99、0 失败。Round 6（全面审计轮）新增 3 条正式断言（ST-31、BR-62、BR-63），并抓到 2 个此前所有用例都没覆盖到的真实缺陷：打开分享链接会永久覆写访问者的本地偏好、分享面板内的键盘操作会静默建立 AudioContext；两条修复后全量 **119 用例 / 109 正式断言 / 0 失败 / 10 未验证**，`ROUTE: NoOne`，明细见 §14。
 
 ---
 
@@ -403,6 +403,122 @@ before: [rain@0.33, rain@0.21]        ← brown 被 sleep 处方的 rain 顶替
 | BR-31.chromium / .firefox / .webkit / .safari | 跨浏览器完整核心路径，随 EP-02 / EP-05 一并未验证 |
 | BR-33 | 60 分钟连续播放（内存泄漏 / 循环接缝），本环境时间成本不划算，仅做了 9 分钟浸泡（A7 PARTIAL） |
 
-这 10 条与 Round 3 / Round 4 完全同源、同条目，本轮**未新增、未美化、未用其他用例替代**；它们不计入正式断言分母（99），也不被算作通过。
+这 10 条与 Round 3 / Round 4 完全同源、同条目，本轮**未新增、未美化、未用其他用例替代**；它们不计入正式断言分母（109），也不被算作通过。
+
+---
+
+## 14. Round 6：全面审计轮（P0-3 收尾 · 2 个缺陷 · P0-4b 键盘收口）
+
+> 本轮输入：「全面检查和审核，挖掘值得改进或修复的地方，逐一处理、测试。」
+> 结论：**修复 2 个真实缺陷、补齐 1 项键盘/焦点能力、明确 1 条不修的产品边界**；全量 **119 用例 / 109 正式断言 / 0 失败 / 10 未验证（100%）**，`ROUTE: NoOne`。
+> 纪律：本轮所有结论都先有实测数据再下判断；每个新断言都做了「注入 → 变红 → 还原 → 复绿」的有效性验证，未验证的推断不写进结论。
+
+### 14.1 逐套件结果（`qa/results/round2/summary.json`）
+
+| 套件 | 用例 | 通过 | 失败 | 未验证 |
+|---|---|---|---|---|
+| `env_probe`（环境能力探测） | 11 | 6 | 0 | 5 |
+| `static_contracts`（静态契约） | 31 | 31 | 0 | 0 |
+| `refresh_script`（曲库刷新脚本） | 7 | 7 | 0 | 0 |
+| `browser`（真实浏览器） | 64 | 59 | 0 | 5 |
+| `degrade_repeats`（降级耗时复现） | 6 | 6 | 0 | 0 |
+| **合计** | **119** | **109** | **0** | **10** |
+
+本轮新增 3 条正式断言：`ST-31`（静态：分享还原挂起偏好回写）、`BR-62`（浏览器：分享链接不改写本地偏好）、`BR-63`（浏览器：Escape 收起面板并归还焦点）；另把 `BR-61` 扩展为「分享面板内键盘操作零 AudioContext」。
+
+### 14.2 缺陷 A：打开别人的分享链接，会永久覆写访问者自己的本地偏好（已修）
+
+**现象（用户可见）**：访问者本地偏好是「放空 + 主音量 0.8」。点开朋友发来的链接 `#sw=1&s=sleep&mv=60&tr=v:rain:33` 之后，配置确实变成「助眠 + 0.6」；**但访问者从此以后正常打开站点，看到的都是这条链接的配置**——他自己的设置被静默替换，没有任何提示。
+
+**一手证据（修复前）**：
+
+```
+本地偏好(前)      : {"scene":"empty","masterVolume":0.8,"brightness":"normal", ...}
+本地偏好(开链接后): {"scene":"sleep","masterVolume":0.6,"brightness":"extreme",
+                    "timerPresetMinutes":30,"timerPresetFade":60, ...}
+后续访问普通页面  : scene=sleep mv=0.6      ← 原设置（放空/0.8）已丢失
+```
+
+**根因（函数级）**：分享还原走 `player.applyMix()`，而 `applyMix` 内部会经四条路径调到 `store.savePrefs()`：`applySceneConfigOnly()`（未启动时改场景处方）、`applyScene()`、`setMasterVolume()`、以及 `syncSlots()`（每次槽位同步）。于是「读一个链接」这个动作被当成了「用户改了自己的设置」。
+
+**修复**：
+1. `store.js` 新增 `holdPrefs()` / `releasePrefs()`（**计数式**挂起，避免嵌套调用被一次释放提前解冻）与 `getPrefsWriteStats()`；`savePrefs()` 在挂起期间只改内存、**不回写 `sw.prefs.v1`**，并累加 `skipped` 计数。
+2. `main.js#restoreFromHash()` 用 `try/finally` 把 `player.applyMix(...)` 整段包住：进入前 `holdPrefs()`，无论成功/异常/抛错都 `releasePrefs()`。
+3. 语义收口：**分享链接只对本次会话生效**；访问者此后自己拖动音量、切场景等主动操作产生的写入照常持久化（不做任何"魔法"拦截）。
+
+**红 → 绿闭环**：
+- 静态断言 `ST-31` 做了**两次独立注入**，各自如实变红，还原后复绿：① 把 `savePrefs()` 里的 `if (prefsHoldDepth > 0)` 改成 `if (false)`（守卫失效）→ `30/31，失败 1`；② 把 `restoreFromHash()` 里的 `store.holdPrefs()` 换成空语句 → `30/31，失败 1`；两次都已 `cmp` 逐字节还原。
+- 行为断言 `BR-62` 在同一次探针上先给出红证据（上表「后续访问普通页面＝sleep/0.6」），修复后 PASS：`before/afterHash/afterFresh` 三处 `sw.prefs.v1` 均为 `empty/0.8`，而 `state` 在两条路径（同标签页 `hashchange`、新文档首屏）上都还原为 `sleep/0.6`，之后再访问无 hash 页面仍是 `empty/0.8`，零 pageerror / console error。
+
+### 14.3 缺陷 B：分享面板内的键盘操作会静默建立 AudioContext（已修）
+
+**现象**：剪贴板不可用时点「分享当前配置」会展开手动复制面板并把焦点放进输入框；这时按 **Escape 收起面板**，`state.audioContext` 会从 `none` 变成 `running`——即"复制一条链接"这个纯读配置的动作，把音频图建起来了。
+
+**一手证据（修复前）**：探针在强制 `navigator.clipboard = undefined` + `execCommand → false` 后，点击 `#btn-share` → 面板展开、焦点 `share-fallback-input` → 按 Escape → `{"hidden": true, "expanded": "false", "focused": "btn-share"}` 但 `ctx=running`。
+
+**根因**：`main.js#bindFirstGesture` 的首次手势监听器把 `#btn-share` 内的点击排除了，但**只排除了按钮本身**；Escape 的 `ev.target` 是面板里的输入框，`closest('#btn-share')` 为 null，于是被当成"真实音频意图"去 `synth.ensureContext()`。
+
+**为什么算缺陷而不是边界**：同一个动作走两条路得到两种状态——`actions.copyShareLink` 后 `audioContext` 是 `none`，真实键盘操作后是 `running`。P0-3 自己声明的口径是「分享路径严格零 AudioContext（硬边界 3）」，行为与声明不一致就是缺陷。
+
+**修复**：守卫从 `target.closest('#btn-share')` 扩为 `target.closest('#btn-share, #share-panel')`——按钮与面板内的任何操作（含输入框里按 Escape）都不解锁音频；监听器保留，下一次真实音频意图（点播放 / 切场景 / Tab 进入控件）照常静默解锁。
+
+**红 → 绿闭环**：把守卫注入回 `#btn-share` 单值 → `lead_audit2` 第 3 项 `FAIL（ctx=running）`；还原 → `PASS（ctx=none）`。`BR-61` 同步扩成三段：契约动作复制（`ctx none`）、面板内 Escape（`ctx none`、`playing=false`）、`file://` 还原可用。
+
+### 14.4 P0-4b：Escape 收起面板 + 焦点归还 + aria-expanded 同步
+
+**背景**：此前六个折叠面板（分享 / 添加声景 / 预设 / 声音库 / 详情 / 音源信息）在键盘上"进得去、出不来"——Escape 无任何反应，读屏用户只能一路 Tab 回触发按钮。
+
+**实现**（`ui.js`）：
+- 新增单一面板表 `PANEL_TRIGGERS`（面板 id ↔ 触发按钮 id）与 `closeTopPanel()`；`keydown` 监听只在 `Escape`（含旧名 `Esc`）时动作，**一次只关最上层那一个**，避免一次按键把整屏收掉。
+- 收起后同步 `aria-expanded="false"` 并把焦点交还 `aria-controls` 指向本面板的那个按钮（"从哪来回哪去"）。
+- `#btn-add` 补上 `aria-expanded="false"` / `aria-controls="voice-picker"`，并在展开、选中声景后同步——此前这个按钮完全不告诉辅助技术"我打开了一个东西"。
+- 分享面板复用既有 `closeSharePanel()`，保证 `hidden` 与 `aria-expanded` 只有一处真源。
+
+**证据（BR-63 实测）**：`{"library":{"hidden":true,"expanded":"false","focus":"btn-library"}, "addOpen":{"hidden":false,"expanded":"true"}, "add":{"hidden":true,"expanded":"false","focus":"btn-add"}}`。
+
+### 14.5 独立探针（17 项，不复用 QA 脚本）
+
+主理人另写 `lead_audit2.py` 独立驱动真实 Chrome，全部 PASS：
+
+| 检查 | 结果 |
+|---|---|
+| 分享面板 Escape 收起 + `aria-expanded=false` | PASS |
+| 关闭后焦点回到 `#btn-share` | PASS |
+| 打开/关闭分享面板都不触发播放、不建 AudioContext | PASS（`ctx=none`） |
+| 声音库 Escape 收起 + 焦点回 `#btn-library` | PASS |
+| 添加声景 `aria-expanded` 随展开/收起同步 | PASS |
+| 添加声景 Escape 收起 + 焦点回 `#btn-add` | PASS |
+| 连发 3 次 hash 后最终值生效（节流末值不丢） | PASS（`meditation/0.25`） |
+| 连发 hash 零 `pageerror` / console error | PASS |
+| 播放中还原分享链接：播放不中断 | PASS（`playing=true`、`playState=playing`） |
+| 播放中还原：场景与声景层换成链接内容 | PASS（`rain`+`brown`） |
+| 播放中还原零错误 | PASS |
+| 四场景混音往返一致（focus / sleep / empty / meditation） | PASS ×4（`getMixSpec()` 逐字段相等） |
+| `file://` 下点分享不抛错、不触发播放 | PASS |
+| `file://` 下分享链接为 `file:` 协议、无原始标题泄露 | PASS |
+
+### 14.6 明确不修的产品边界：手写外来链接的首段 voice
+
+**事实**：主槽位（`slots[0]`）的 `voice` 由场景处方 `buildSceneSlots()` 决定（`C.SCENES[scene].padVoice`），`applyMixVolumes()` 按索引对齐音量。所以一条**手写/裁剪过**的链接，如果首段 `v:<voice>` 不等于该场景的垫声，只有音量会被采纳，声景会变成场景垫声。
+
+**实测**：场景 `focus`（垫声 `brown`）打开 `#sw=1&s=focus&mv=50&tr=v:rain:30` → 还原为 `[{"voice":"brown","volume":0.3}]`。
+
+**为什么判定为边界而不是缺陷**：站内生成的链接首段恒等于该场景垫声，四场景（含用户自加声景层）往返 **4/4 逐字段相等**（§14.5 表），真实用户链路零损失；这条只影响人工改写的链接，且音量仍然被尊重、不静默清空。
+
+**为什么不在这轮改**：改动主槽位 voice 语义会牵动已被 8 条分享/预设断言与自愈升级链（`upgradeMain` / `degradeToSynth`）验证过的路径，收益（仅手写链接）与回归风险不成比例。列为 **P1**，将来若做，方向是在 `sanitizeMix()` 里把"非本场景垫声的首段 voice"下移为叠加层，并按 `buildSceneSlots()` 的 `mainVolume`（有主音源曲目时 `1.0`、冥想场景 `0.06`）插入垫声段，再做四场景往返 + 满 3 轨边界验证。
+
+### 14.7 本轮变更清单
+
+| 文件 | 变更 |
+|---|---|
+| `js/store.js` | `holdPrefs` / `releasePrefs` / `getPrefsWriteStats`，`savePrefs` 挂起期间跳过回写 |
+| `js/main.js` | `restoreFromHash` 用 `try/finally` 包住偏好挂起；首次手势守卫扩到 `#share-panel` |
+| `js/ui.js` | `PANEL_TRIGGERS` + `closeTopPanel()` + Escape 监听；`#btn-add` 的 `aria-expanded` 同步 |
+| `index.html` | `#btn-add` 补 `aria-expanded="false"` / `aria-controls="voice-picker"` |
+| `qa/test_static_contracts.py` | 新增 `ST-31` |
+| `qa/test_browser.py` | 新增 `BR-62`、`BR-63`；`BR-61` 扩展"面板内键盘操作零 AudioContext" |
+
+> 站点源文件数仍为 **15**（未新增文件），仍为纯静态、零构建、`file://` 与 Pages 子路径双兼容。
+
 
 

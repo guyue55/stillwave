@@ -54,6 +54,41 @@ IMPURITY_WORDS = [
 ]
 
 
+def strip_js_comments(src: str) -> str:
+    """去掉 JS 注释（块注释 + 行注释），避免「注释里写了关键字」骗过静态断言。
+
+    站点源码内没有 http:// 以外的 `//` 字面量，这里再做一次保护：
+    行注释只在 `//` 不紧跟 `:` 时剔除，避免误伤 URL。
+    """
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    src = re.sub(r"(?m)(^|[^:])\s*//[^\n]*", r"\1", src)
+    return src
+
+
+def js_function_body(src: str, name: str) -> str:
+    """按大括号配对截取某个函数的函数体（含花括号），取不到返回空串。
+
+    用于「只在某个渲染/生成函数内」做静态断言：ui.js 既有代码本来就有
+    innerHTML（列表渲染），不能用全文件计数去判断分享面板是否安全。
+    """
+    m = re.search(r"function\s+%s\s*\(" % re.escape(name), src)
+    if not m:
+        return ""
+    i = src.find("{", m.end())
+    if i < 0:
+        return ""
+    depth = 0
+    for j in range(i, len(src)):
+        ch = src[j]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return src[i:j + 1]
+    return ""
+
+
 def all_site_files() -> List[str]:
     # 仓库布局下根目录还包含 .git/、qa/、docs/ 等非站点运行时文件，
     # 遍历时跳过，保证 ST-01 的「源文件树」口径与原工作区一致。
@@ -490,6 +525,230 @@ def run(phase: str = "full") -> Suite:
             % (["%s@%s=%.2f<%.1f" % (n, l, r, t) for n, l, r, t in contrast_bad][:6],
                " ".join("%s@%s=%.2f" % (n, l, r)
                         for n, l, r, t in contrast_rows[:5])))
+
+    # ---- ST-29 收藏与预设（P0-2）静态契约 -------------------------------
+    store_js = read_text("js/store.js")
+    app_css_full = read_text("styles/app.css")
+    # 关键：一律在「去注释后的代码」上判断，否则注释里出现同名调用会骗过断言
+    #（注入验证时曾实测到这一点：把 removeStorage(K.favorites) 注释掉后必须变红）
+    store_code = strip_js_comments(store_js)
+    ui_code = strip_js_comments(ui_js)
+
+    # 1) STORAGE_KEYS：两个新键存在且块内恰好 5 个键
+    sk_m = re.search(r"var\s+STORAGE_KEYS\s*=\s*\{(.*?)\}", config_js, re.S)
+    sk_body = sk_m.group(1) if sk_m else ""
+    sk_pairs = dict(re.findall(r"(\w+)\s*:\s*['\"]([^'\"]+)['\"]", sk_body))
+    sk_ok = (sk_pairs.get("favorites") == "sw.favorites.v1"
+             and sk_pairs.get("presets") == "sw.presets.v1"
+             and len(sk_pairs) == 5)
+
+    # 2) clearAll 函数体必须显式清除两个新键（否则「清除本地设置」会留下收藏）
+    ca_m = re.search(r"function\s+clearAll\s*\([^)]*\)\s*\{(.*?)\n  \}",
+                     store_code, re.S)
+    ca_body = ca_m.group(1) if ca_m else ""
+    clear_ok = ("removeStorage(K.favorites)" in ca_body
+                and "removeStorage(K.presets)" in ca_body)
+
+    # 3) SW.store 导出六个 P0-2 方法
+    ex_m = re.search(r"SW\.store\s*=\s*\{(.*?)\n\s*\};", store_code, re.S)
+    ex_body = ex_m.group(1) if ex_m else ""
+    store_exports = ("getFavorites", "isFavorite", "toggleFavorite",
+                     "getPresets", "savePreset", "deletePreset")
+    store_export_missing = [n for n in store_exports
+                            if not re.search(r"\b%s\s*:" % n, ex_body)]
+
+    # 4) main.js 快照契约 + actions 四个入口
+    main_code = strip_js_comments(main_js)
+    act_m = re.search(r"function\s+buildActions\s*\([^)]*\)\s*\{(.*?)"
+                      r"function\s+buildInject", main_code, re.S)
+    act_body = act_m.group(1) if act_m else ""
+    mains_missing = [n for n in ("getFavoritesSnapshot", "getPresetsSnapshot",
+                                 "getMixSpec") if n not in main_code]
+    act_missing = [n for n in ("toggleFavorite", "savePreset", "deletePreset",
+                               "applyMix")
+                   if not re.search(r"\b%s\s*:" % n, act_body)]
+
+    # 5) 预设命名走内联 input：ui.js 代码零原生弹窗（注释提及不计）
+    dialog_hits = re.findall(
+        r"(?:window\s*\.\s*)?\b(?:prompt|alert|confirm)\s*\(", ui_code)
+
+    # 6) 预设面板 HTML 契约：按钮 aria 关联 + 面板默认 hidden
+    pre_btn_m = re.search(r'<button[^>]*id="btn-presets"[^>]*>', html)
+    pre_panel_m = re.search(r'<div[^>]*id="preset-panel"[^>]*>', html)
+    pre_btn = pre_btn_m.group(0) if pre_btn_m else ""
+    pre_panel = pre_panel_m.group(0) if pre_panel_m else ""
+    preset_html_ok = (
+        bool(pre_btn) and 'aria-expanded="false"' in pre_btn
+        and 'aria-controls="preset-panel"' in pre_btn
+        and bool(pre_panel) and re.search(r"\shidden(?=[\s>/])", pre_panel) is not None)
+
+    # 7) #btn-fav-only 必须在 .lib-filters 之外（否则会污染 BR-42 的 chip 计数）
+    #    判断方式：先剥掉行内注释（注释里会提到 .lib-filters，位置判断会被带偏），
+    #    再要求 renderLibraryPanel 区间内 btn-fav-only 出现在第一个
+    #    「<div class="lib-filters"」标记之前 —— 它独占 <p class="lib-flag-row">，
+    #    在两组 chip 之前渲染，故必然不在 chip 组内。
+    #    另要求 index.html 内任何静态 .lib-filters 块都不含该按钮。
+    rl_start = ui_js.find("function renderLibraryPanel")
+    rl_end = ui_js.find("function getLibrarySnapshot", rl_start)
+    rl_raw = ui_js[rl_start:rl_end] if rl_start >= 0 and rl_end > rl_start else ""
+    rl_body = "\n".join(ln for ln in rl_raw.splitlines()
+                        if not ln.lstrip().startswith(("*", "/*", "//")))
+    i_fav_btn = rl_body.find("btn-fav-only")
+    i_filters = rl_body.find('<div class="lib-filters"')
+    fav_outside_js = (i_fav_btn >= 0 and i_filters >= 0 and i_fav_btn < i_filters)
+    html_filter_blocks = re.findall(r'<div class="lib-filters".*?</div>', html, re.S)
+    fav_outside_html = all("btn-fav-only" not in b for b in html_filter_blocks)
+    fav_outside = fav_outside_js and fav_outside_html
+
+    # 8) 三个新控件的 44px 触控令牌：按选择器逐条取规则体（含分组选择器）
+    rule_blocks = re.findall(r"([^{}]+)\{([^{}]*)\}", app_css_full)
+    touch_missing = []
+    for cls in (".lib-fav", ".preset-apply", ".preset-delete"):
+        hit = False
+        for sel, body in rule_blocks:
+            if cls in [s.strip() for s in sel.split(",")] and \
+                    "min-height: var(--touch)" in body:
+                hit = True
+                break
+        if not hit:
+            touch_missing.append(cls)
+
+    # 9) A14：收藏/预设层代码零 originalTitle（注释提及不计）
+    a14_hits = ui_code.count("originalTitle") + store_code.count("originalTitle")
+
+    st29_ok = (sk_ok and clear_ok and not store_export_missing
+               and not mains_missing and not act_missing and not dialog_hits
+               and preset_html_ok and fav_outside and not touch_missing
+               and a14_hits == 0)
+    s.check("ST-29", "收藏与预设：存储键/清空覆盖/契约入口/零 prompt/44px/零 originalTitle",
+            "P0-2 / A14 / A5 / AD-21", st29_ok,
+            "STORAGE_KEYS 5 键含 sw.favorites.v1 + sw.presets.v1；clearAll 清两键；"
+            "store 导出 6 个方法；main.js 三快照 + actions 四入口；ui.js 零 prompt/"
+            "alert/confirm；#btn-presets aria 关联且面板 hidden；#btn-fav-only 在 "
+            ".lib-filters 外；.lib-fav/.preset-apply/.preset-delete 均 min-height:"
+            "var(--touch)；ui.js+store.js 零 originalTitle",
+            "storageKeys=%s 含新键=%s 键数=%d | clearAll=%s | store导出缺=%s | "
+            "main快照缺=%s actions缺=%s | 弹窗=%s | presetHTML=%s(fav=%r) | "
+            "favOnlyOutside=%s(js=%s html=%s, idx %d<%d) | 缺44px=%s | "
+            "originalTitle=%d"
+            % ({k: sk_pairs.get(k) for k in ("favorites", "presets")},
+               sk_ok, len(sk_pairs), clear_ok, store_export_missing,
+               mains_missing, act_missing, dialog_hits[:3], preset_html_ok,
+               pre_btn[:80], fav_outside, fav_outside_js, fav_outside_html,
+               i_fav_btn, i_filters, touch_missing, a14_hits))
+
+    # ---- ST-30 URL 分享状态（P0-3）静态契约 ------------------------------
+    # 1) HTML：#btn-share 可访问（有 aria-label 或可见文案）+ aria-expanded 收起
+    #    + aria-controls 指向真实存在的面板且面板默认 hidden
+    share_btn_m = re.search(r"<button[^>]*\bid=\"btn-share\"[^>]*>(.*?)</button>",
+                            html, re.S)
+    share_btn = share_btn_m.group(0) if share_btn_m else ""
+    share_btn_text = (share_btn_m.group(1) or "") if share_btn_m else ""
+    ctrl_m = re.search(r'aria-controls="([^"]+)"', share_btn)
+    share_ctrl = ctrl_m.group(1) if ctrl_m else ""
+    share_panel = ""
+    if share_ctrl:
+        pm = re.search(r"<[^>]*\bid=\"%s\"[^>]*>" % re.escape(share_ctrl), html)
+        share_panel = pm.group(0) if pm else ""
+    share_named = ("aria-label=" in share_btn
+                   or bool(re.sub(r"<[^>]+>", "", share_btn_text).strip()))
+    share_html_ok = (
+        bool(share_btn) and share_named
+        and 'aria-expanded="false"' in share_btn
+        and bool(share_panel)
+        and re.search(r"\shidden(?=[\s>/])", share_panel) is not None)
+
+    # 2) CSS：至少一条含 share 的选择器命中 44px 触控令牌
+    share_touch_ok = False
+    for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", app_css_full):
+        sels = [x.strip().lower() for x in sel.split(",")]
+        if any("share" in x for x in sels) and "min-height: var(--touch)" in body:
+            share_touch_ok = True
+            break
+
+    # 3) ui.js：分享相关的渲染/文本生成函数必须存在，且函数体内零 innerHTML、
+    #    零 originalTitle（全文件既有 innerHTML 不计，只看分享函数体）
+    share_fn_names = sorted(set(re.findall(r"function\s+(\w*[Ss]hare\w*)\s*\(",
+                                          ui_code)))
+    share_bodies = [js_function_body(ui_code, n) for n in share_fn_names]
+    share_body = "\n".join(share_bodies)
+    share_ui_ok = (bool(share_fn_names)
+                   and share_body.count("innerHTML") == 0
+                   and share_body.count("originalTitle") == 0)
+
+    # 4) main.js：契约三入口 + hashchange 监听 + 节流
+    #    节流证据按「语义」判：时间戳比较 / 哨兵变量 / setTimeout+clearTimeout 去抖
+    #    任一成立即可——这里要求的是「连粘两次只还原一次」，不是某个变量名。
+    main_share_missing = [n for n in ("parseShareHash", "getShareHash",
+                                      "restoreFromHash")
+                          if n not in main_code]
+    hc_idx = main_code.find("hashchange")
+    hashchange_ok = hc_idx >= 0
+    throttle_ok = bool(re.search(
+        r"(lastHash\w*|hashThrottle|SHARE_THROTTLE_MS|hashTimer|pending"
+        r"|Date\.now\(\)|performance\.now\(\)|clearTimeout\()",
+        main_code[hc_idx:hc_idx + 1600])) if hashchange_ok else False
+
+    # 5) actions 暴露 copyShareLink（与点击 #btn-share 等价）
+    share_action_ok = re.search(r"\bcopyShareLink\s*:", act_body) is not None
+
+    # 6) 站点源文件数仍为 15（新增文件必须显式更新清单）
+    files_ok = len(files) == 15
+
+    st30_ok = (share_html_ok and share_touch_ok and share_ui_ok
+               and not main_share_missing and hashchange_ok and throttle_ok
+               and share_action_ok and files_ok)
+    s.check("ST-30", "URL 分享：按钮可访问/面板收起/44px/零 innerHTML/契约入口/hashchange 节流",
+            "P0-3 / A5 / A6 / A14 / AD-21", st30_ok,
+            "#btn-share 有可访问名与 aria-expanded=false，aria-controls 指向默认 "
+            "hidden 的面板；含 share 的选择器命中 min-height:var(--touch)；"
+            "ui.js 分享函数的函数体零 innerHTML、零 originalTitle；main.js 含 "
+            "parseShareHash/getShareHash/restoreFromHash + hashchange + 节流；"
+            "actions 有 copyShareLink；站点文件数=15",
+            "btn=%r named=%s ctrl=%r panelHidden=%s | 44px=%s | shareFns=%s "
+            "innerHTML=%d originalTitle=%d | main缺=%s hashchange=%s 节流=%s | "
+            "copyShareLink=%s | files=%d"
+            % (share_btn[:70], share_named, share_ctrl,
+               bool(share_panel) and re.search(r"\shidden(?=[\s>/])", share_panel) is not None,
+               share_touch_ok, share_fn_names, share_body.count("innerHTML"),
+               share_body.count("originalTitle"), main_share_missing,
+               hashchange_ok, throttle_ok, share_action_ok, len(files)))
+
+    # ---- ST-31 分享链接不得改写访问者本地偏好（P0-3 收口） ----------------
+    # 缺陷背景（审计实证）：applyMix → applyScene / applySceneConfigOnly /
+    # setMasterVolume / syncSlots 都会 store.savePrefs()，所以「点开别人的分享链接」
+    # 会把访问者自己的偏好永久改成对方的配置。修复方式是还原期间挂起偏好回写。
+    save_body = js_function_body(store_code, "savePrefs")
+    hold_export_ok = (re.search(r"\bholdPrefs\s*:", store_code) is not None
+                      and re.search(r"\breleasePrefs\s*:", store_code) is not None)
+    hold_decl_ok = (re.search(r"function\s+holdPrefs\s*\(", store_code) is not None
+                    and re.search(r"function\s+releasePrefs\s*\(", store_code) is not None)
+    i_guard = save_body.find("prefsHoldDepth")
+    i_write = save_body.find("writeStorage")
+    save_guard_ok = (i_guard >= 0 and i_write > i_guard
+                     and re.search(r"return\s*;", save_body[i_guard:i_write]) is not None)
+    restore_body = js_function_body(main_code, "restoreFromHash")
+    i_hold = restore_body.find("holdPrefs")
+    i_apply = restore_body.find("applyMix")
+    i_release = restore_body.find("releasePrefs")
+    restore_hold_ok = (i_hold >= 0 and i_apply > i_hold and i_release > i_apply
+                       and "finally" in restore_body)
+    # 反向证据：还原路径上不得出现「先 applyMix 之后再补一次 savePrefs」这类绕过写法
+    post_apply = restore_body[i_apply:] if i_apply >= 0 else ""
+    no_bypass = "savePrefs" not in post_apply
+
+    st31_ok = (hold_decl_ok and save_guard_ok and hold_export_ok
+               and restore_hold_ok and no_bypass)
+    s.check("ST-31", "分享还原挂起偏好回写：访问者本地设置不被他人链接覆写",
+            "P0-3 / P0-11 / A5", st31_ok,
+            "store.js 有 holdPrefs/releasePrefs 并在 savePrefs 内于 writeStorage 之前"
+            "提前 return；store 导出两方法；main.js restoreFromHash 在 applyMix 之前"
+            "holdPrefs、之后 releasePrefs（finally），applyMix 之后不再补写偏好",
+            "holdDecl=%s saveGuard=%s(guard@%d write@%d) export=%s restoreHold=%s"
+            "(hold@%d apply@%d release@%d finally=%s) noBypass=%s"
+            % (hold_decl_ok, save_guard_ok, i_guard, i_write, hold_export_ok,
+               restore_hold_ok, i_hold, i_apply, i_release,
+               "finally" in restore_body, no_bypass))
 
     # ---- 记录元数据 -----------------------------------------------------
     s.artifacts["manifest"] = {

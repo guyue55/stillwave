@@ -284,6 +284,16 @@ input[type="number"] {
 .values { border-top: 1px solid var(--c-border); padding-top: var(--sp-3); }
 .values-text { font-size: var(--fz-small); color: var(--c-text-2); margin: 0 0 var(--sp-3); }
 .values-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+/* P0-3 分享：按钮复用 .ghost-btn 的 44px 触控区与全局 :focus-visible 焦点环；
+   手动复制兜底的只读输入框独占一整行，避免在 320px 下挤压既有按钮 */
+#btn-share:focus-visible { border-color: var(--c-primary); }
+.share-fallback {
+  flex: 1 1 100%; min-width: 0; min-height: var(--touch);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--c-primary); border-radius: var(--radius);
+  background: var(--c-bg); color: var(--c-text);
+  font: inherit; font-size: var(--fz-small);
+}
 .shortcuts { font-size: var(--fz-small); color: var(--c-text-2); }
 .shortcuts summary { cursor: pointer; min-height: var(--touch); display: flex; align-items: center; }
 .shortcuts ul { margin: var(--sp-2) 0 0; padding-left: var(--sp-5); }

@@ -392,8 +392,28 @@
     emit(E.STATE, { state: getState(), changed: ['prefs'] });
   }
 
-  /** 保存偏好（静默降级到内存）。 */
-  function savePrefs() { writeStorage(K.prefs, collectPrefs()); }
+  /**
+   * 偏好写入挂起：持有期间 savePrefs 只改内存、不回写 K.prefs。
+   * 用途：分享链接还原（restoreFromHash）全程包一层，使「打开别人的分享链接」
+   * 不会永久覆写访问者自己的本地偏好——分享链接只对本次会话生效。
+   * 用计数而非布尔，避免嵌套持有被一次释放提前解冻。
+   */
+  var prefsHoldDepth = 0;
+  var prefsHoldSkipped = 0;
+  function holdPrefs() { prefsHoldDepth += 1; }
+  function releasePrefs() { if (prefsHoldDepth > 0) { prefsHoldDepth -= 1; } }
+  function getPrefsWriteStats() {
+    return { held: prefsHoldDepth > 0, depth: prefsHoldDepth, skipped: prefsHoldSkipped };
+  }
+
+  /** 保存偏好（静默降级到内存）；持有挂起时跳过回写并计数。 */
+  function savePrefs() {
+    if (prefsHoldDepth > 0) {
+      prefsHoldSkipped += 1;
+      return;
+    }
+    writeStorage(K.prefs, collectPrefs());
+  }
 
   /**
    * 清除本地设置：清全部存储键并恢复出厂默认（P0-09 / P0-12 / P0-2）。
@@ -430,6 +450,9 @@
     emit: emit,
     loadPrefs: loadPrefs,
     savePrefs: savePrefs,
+    holdPrefs: holdPrefs,
+    releasePrefs: releasePrefs,
+    getPrefsWriteStats: getPrefsWriteStats,
     clearAll: clearAll,
     pushLog: pushLog,
     getLog: getLog,

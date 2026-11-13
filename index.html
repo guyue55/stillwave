@@ -99,7 +99,8 @@
     <section class="mixer" aria-labelledby="mixer-heading">
       <div class="section-head">
         <h2 id="mixer-heading">叠加声景 <span id="mix-count" class="count">(0/3)</span></h2>
-        <button id="btn-add" type="button" class="ghost-btn">+ 添加声景</button>
+        <button id="btn-add" type="button" class="ghost-btn"
+                aria-expanded="false" aria-controls="voice-picker">+ 添加声景</button>
       </div>
       <div id="mix-cards" class="cards"></div>
       <div id="voice-picker" class="voice-picker" hidden role="group" aria-label="选择要添加的声景"></div>
@@ -165,9 +166,14 @@
       <div class="values">
         <p class="values-text">静澜 · 全免费 · 无需登录 · 不采集数据</p>
         <div class="values-actions">
+          <!-- P0-3：分享当前配置。按钮文本即无障碍名，不再重复加 aria-label；
+               aria-controls 指向的手动复制兜底面板默认收起，仅复制失败时展开 -->
+          <button id="btn-share" type="button" class="ghost-btn"
+                  aria-expanded="false" aria-controls="share-panel">分享当前配置</button>
           <button id="btn-drift" type="button" class="ghost-btn" aria-pressed="false">自动漂移：关</button>
           <button id="btn-clear" type="button" class="ghost-btn">清除本地设置</button>
         </div>
+        <div id="share-panel" class="share-panel" hidden></div>
         <details class="shortcuts">
           <summary>快捷键说明</summary>
           <ul>
