@@ -692,8 +692,19 @@ def run(phase: str = "full") -> Suite:
     # 5) actions 暴露 copyShareLink（与点击 #btn-share 等价）
     share_action_ok = re.search(r"\bcopyShareLink\s*:", act_body) is not None
 
-    # 6) 站点源文件数仍为 15（新增文件必须显式更新清单）
-    files_ok = len(files) == 15
+    # 6) 站点发布文件集合仍为 15（新增文件必须显式更新清单）
+    #    口径修正是必须的：仓库根布局下还有 README / LICENSE / .nojekyll / .gitignore /
+    #    CHANGELOG 等**仓库元文件**，它们不是站点运行时文件。用「全目录文件数 == 15」
+    #    会让同一份源码在 meditation/ 布局下 PASS、在仓库根布局下假红（实测 22）。
+    #    这里只统计会跟着 Pages 一起发布的子树（index.html + js/styles/data/tools/.github），
+    #    既保留「新增站点文件必须更新 EXPECTED_FILES」的原意，又与布局无关。
+    PUBLISHED_DIRS = ("js/", "styles/", "data/", "tools/", ".github/")
+    published = [f for f in files
+                 if f == "index.html" or f.startswith(PUBLISHED_DIRS)]
+    unexpected = [f for f in published if f not in EXPECTED_FILES]
+    files_ok = (not unexpected
+                and all(f in published for f in EXPECTED_FILES)
+                and len(EXPECTED_FILES) == 15)
 
     st30_ok = (share_html_ok and share_touch_ok and share_ui_ok
                and not main_share_missing and hashchange_ok and throttle_ok
@@ -707,12 +718,13 @@ def run(phase: str = "full") -> Suite:
             "actions 有 copyShareLink；站点文件数=15",
             "btn=%r named=%s ctrl=%r panelHidden=%s | 44px=%s | shareFns=%s "
             "innerHTML=%d originalTitle=%d | main缺=%s hashchange=%s 节流=%s | "
-            "copyShareLink=%s | files=%d"
+            "copyShareLink=%s | published=%d unexpected=%s"
             % (share_btn[:70], share_named, share_ctrl,
                bool(share_panel) and re.search(r"\shidden(?=[\s>/])", share_panel) is not None,
                share_touch_ok, share_fn_names, share_body.count("innerHTML"),
                share_body.count("originalTitle"), main_share_missing,
-               hashchange_ok, throttle_ok, share_action_ok, len(files)))
+               hashchange_ok, throttle_ok, share_action_ok,
+               len(published), unexpected[:5]))
 
     # ---- ST-31 分享链接不得改写访问者本地偏好（P0-3 收口） ----------------
     # 缺陷背景（审计实证）：applyMix → applyScene / applySceneConfigOnly /

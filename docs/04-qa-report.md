@@ -520,5 +520,16 @@ before: [rain@0.33, rain@0.21]        ← brown 被 sleep 处方的 rain 顶替
 
 > 站点源文件数仍为 **15**（未新增文件），仍为纯静态、零构建、`file://` 与 Pages 子路径双兼容。
 
+### 14.8 提交后复核发现的第三个问题：静态门禁在仓库布局下假红（已修）
+
+**触发**：把同一份静态契约脚本直接放在 `stillwave/`（站点即仓库根）下跑，`ST-30` 报 `FAIL`，而 `ST-01` 仍是 PASS；`actual` 显示 `files=22`。
+
+**根因**：`ST-30` 第 6 条写的是 `len(files) == 15`，而 `files` 来自 `all_site_files()` 的全目录遍历。仓库根布局额外包含 `README.md` / `LICENSE` / `NOTICE.md` / `CONTRIBUTING.md` / `CHANGELOG.md` / `.gitignore` / `.nojekyll` 共 7 个**仓库元文件**，它们不随 Pages 发布，却被算进了站点源文件数。`meditation/` 布局没有这些文件，所以之前的全量轮次一直是绿的——**同一份源码、两种布局、两种结论**，属于门禁自身的可移植性缺陷。
+
+**修复**：`ST-30` 改为只统计会随 Pages 发布的子树（`index.html` + `js/` `styles/` `data/` `tools/` `.github/`），要求 15 个清单文件全在、且**零未登记文件**；仓库元文件不再计入。这既保留「新增站点文件必须显式更新 `EXPECTED_FILES`」的原意，又与布局无关。
+
+**有效性验证**：两个布局各跑静态契约，均 **31/31 PASS**；随后在 `meditation/js/` 注入一个未登记的 `__qa_unexpected.js` → `ST-30` 如实 `FAIL（30/31）`；移除后 `31/31 PASS`。断言没有因修正而被放宽。
+
+
 
 
