@@ -1,8 +1,8 @@
 window.SW = window.SW || {};
 window.SW.BUNDLED_MANIFEST = {
   "schema": "stillwave-audio-manifest/v1",
-  "version": 1,
-  "updatedAt": "2026-11-09T16:16:11Z",
+  "version": 2,
+  "updatedAt": "2026-11-16T10:37:15Z",
   "verifiedAt": "2026-11-09",
   "count": 30,
   "scenes": {
