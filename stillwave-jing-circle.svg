@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- 静澜 Stillwave · 极简青灰「静」字标识（固定 MaShanZheng-Regular + 青灰涟漪，非模型画字）shape=circle safe=false -->
+  <circle cx="512.00" cy="512.00" r="512.00" fill="#0e1418"/>
+  <circle cx="512.00" cy="496.64" r="343.04" fill="none" stroke="#7fa8a0" stroke-opacity="0.72" stroke-width="12.29"/><circle cx="512.00" cy="496.64" r="414.72" fill="none" stroke="#7fa8a0" stroke-opacity="0.42" stroke-width="9.22"/><circle cx="512.00" cy="496.64" r="479.23" fill="none" stroke="#7fa8a0" stroke-opacity="0.22" stroke-width="6.14"/>
+  <circle cx="512.00" cy="496.64" r="307.20" fill="#7fa8a0" fill-opacity="0.10"/>
+  <g fill="#e6edea"><path d="M557.61 310.73 Z M406.34 295.33 L430.34 305.30 L430.34 320.70 L430.34 336.55 L449.37 335.19 L430.34 380.48 L439.40 379.12 L455.25 406.75 L443.93 406.75 L432.16 406.75 L429.89 416.26 L663.13 449.77 L673.10 451.13 L483.79 647.69 L374.19 592.89 L374.64 621.87 L554.89 513.63 L555.80 500.04 L485.60 495.06 L490.13 490.53 L398.64 385.01 L400.00 372.78 Z M608.33 430.75 L592.48 457.02 L600.18 455.66 Z M606.07 480.57 Z "/></g>
+</svg>

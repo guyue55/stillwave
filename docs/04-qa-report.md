@@ -533,3 +533,57 @@ before: [rain@0.33, rain@0.21]        ← brown 被 sleep 处方的 rain 顶替
 
 
 
+
+---
+
+## 15. Round 7：v02 书法体图标接入验收
+
+> 用户授权接入本地图标包 `stillwave-web-icon-kit-v02`。这是产品侧改版：把站点从「刻意留空的 `data:,`」升级为真实品牌图标。
+
+### 15.1 接入范围与素材核验
+
+接入 3 个文件到 `meditation/` 与 `stillwave/` 根目录（共 6 份，逐字节一致）：
+
+| 文件 | 用途 | 大小 |
+|---|---|---|
+| `favicon.ico` | 浏览器标签（16 帧涟漪符号例外 + 32/48 书法体） | 8166 B |
+| `stillwave-jing-circle.svg` | 矢量图标，1024×1024 | 1191 B |
+| `apple-touch-icon.png` | iOS 主屏 180×180 | 30162 B |
+
+- 主理人实测图标包 10 个文件的 SHA-256 与 `kit.json` **全部一致**；SVG 零 `<script>` / `javascript:` / `xlink:href` / `@import` / `<image>` / `onerror=`。
+- 接入的两份 `index.html` 把第 9 行 `<link rel="icon" href="data:,">` 换成 3 条 `./` 相对路径声明；两目录 `index.html` 逐字节一致。
+- **未接** PWA 图标（`icon-192/512`、`maskable-192/512`）：站点无 webmanifest，复制即死文件，且安装提示与低刺激原则冲突。`optional/` 候选同样未启用。
+
+### 15.2 静态契约不需要改（有代码级依据）
+
+- `ST-01` 只校验 `EXPECTED_FILES` 齐全 + 无构建产物，**不数多余文件**；
+- `ST-30` 的 `published` 集合只含 `index.html` + `js/ styles/ data/ tools/ .github/`，**不含根目录图标**；
+- `ST-02` 要求本地引用 `./` 开头，3 条新声明均合规。
+
+站点文件数从 15 → 18（根目录 +3），静态契约 31/31 不受影响。
+
+### 15.3 BR-29 口径演进（不是放宽）
+
+**冲突**：`BR-29` 原断言 `not favicon_reqs`（零图标请求），这是 Round 2 用 `data:,` 消除 404 时的实现副产品。接入真实图标后浏览器必然发请求，旧断言会红。
+
+**演进**：A6 的本质目标是「零 404 / 零 console error / 零 pageerror / 零敏感头」。图标存在后，正确目标是「图标被采用且全部 200」。新断言在 `favicon_204=False` 的**原始服务**上：
+1. 收集 URL 含 `favicon` / `apple-touch-icon` / `stillwave-jing-circle` 的请求，要求 **≥1 条**；
+2. 对每条去重 URL 独立 `page.request.get()` 正向确认 `status == 200`（harness 只记录 ≥400 的响应，光看 `http_errors` 为空不足以证明 200）；
+3. 保留 `not console_errors` / `not page_errors` / `not http_errors` / `not request_failed` / `not sensitive_headers` / `wait_contract` 成功。
+
+**实测**：`iconStatus=[{"url":"stillwave-jing-circle.svg","status":200}]`；`console=0 pageerror=0 4xx=[] requestFailed=0`（Chrome 在同时声明 SVG 时优先用 SVG，只发 1 条请求，属预期）。
+
+**断言灵敏度验证（防假绿）**：临时把 SVG 改名令其 404 → `strict=False, iconOk=False, status=404, httpErr=[404]` **如实变红**；还原 → `strict=True, status=200` **复绿**；过程记录在 `/tmp/inject_br29.py` 输出，站点文件已还原为原样。
+
+### 15.4 全量回归（干净轮 round5）
+
+| 套件 | 用例 | 通过 | 失败 | 未验证 |
+|---|---|---|---|---|
+| env_probe | 11 | 6 | 0 | 5 |
+| static_contracts | 31 | 31 | 0 | 0 |
+| refresh_script | 7 | 7 | 0 | 0 |
+| browser | 64 | 59 | 0 | 5 |
+| degrade_repeats | 6 | 6 | 0 | 0 |
+| **合计** | **119** | **109** | **0** | **10** |
+
+正式断言通过率 **100% (109/109)**，`ROUTE: NoOne`。10 项未验证与 §13.7 同源，未新增、未美化。
