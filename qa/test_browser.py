@@ -2582,9 +2582,12 @@ def group_environments(s: Suite, pw: Any, servers: Dict[str, StaticServer],
     finally:
         ctx.close()
 
-    # BR-29 A6 严格口径（Round 2）：favicon 已用 <link rel="icon" href="data:,">
-    # 修复。在**关闭 favicon_204 中性化**的原始静态服务上直接断言
-    # 零 404 / 零 console error / 零 pageerror / 零 favicon 请求，不掩盖不豁免。
+    # BR-29 A6 严格口径：v02 图标接入后，断言目标从「零图标请求」演进为
+    # 「真实图标被浏览器采用且全部 200」。历史：最初站点无图标 → 浏览器自动请求
+    # /favicon.ico 得 404；Round 2 用 <link rel="icon" href="data:,"> 抑制请求；
+    # 本轮用户授权接入书法体「静」图标后，零请求不再是正确目标——A6 的本质是
+    # 「零 404 / 零 console error / 零 pageerror / 零敏感头」，图标必须存在且可取。
+    # 仍在**关闭 favicon_204 中性化**的原始服务上实测，不掩盖不豁免。
     raw = StaticServer(prefix="", favicon_204=False)
     try:
         ctx, page, ev = new_page(chrome)
@@ -2593,8 +2596,21 @@ def group_environments(s: Suite, pw: Any, servers: Dict[str, StaticServer],
             ok = wait_contract(page)
             act(page, "start")           # 全流程（含首次手势出声）审查
             time.sleep(0.8)
-            favicon_reqs = [r["url"] for r in ev.requests
-                            if "favicon" in r["url"]]
+            icon_keys = ("favicon", "apple-touch-icon", "stillwave-jing-circle")
+            icon_reqs = [r["url"] for r in ev.requests
+                         if any(k in r["url"] for k in icon_keys)]
+            # 独立 GET 证明图标真的 200：harness 只记录 >=400 的响应，
+            # 所以「没有 http_errors」还不够，必须正向确认状态码。
+            icon_status = []
+            for icon_url in dict.fromkeys(icon_reqs):  # 去重保序
+                try:
+                    resp = page.request.get(icon_url, timeout=8000)
+                    icon_status.append({"url": icon_url, "status": resp.status})
+                except Exception as exc:  # noqa: BLE001
+                    icon_status.append({"url": icon_url,
+                                        "status": "error:%s" % type(exc).__name__})
+            icon_ok = bool(icon_reqs) and all(
+                x["status"] == 200 for x in icon_status)
             has_favicon_404 = any("404" in e for e in ev.console_errors) or any(
                 x["status"] == 404 for x in ev.http_errors)
             strict_a6 = (
@@ -2602,31 +2618,35 @@ def group_environments(s: Suite, pw: Any, servers: Dict[str, StaticServer],
                 and not ev.console_errors
                 and not ev.page_errors
                 and not ev.http_errors
-                and not favicon_reqs
+                and icon_ok
+                and not ev.request_failed
                 and not ev.sensitive_headers)
             s.artifacts["faviconObservation"] = {
                 "consoleErrors": ev.console_errors,
                 "pageErrors": ev.page_errors,
                 "httpErrors": ev.http_errors,
-                "faviconRequests": favicon_reqs,
+                "requestFailed": ev.request_failed[:5],
+                "iconRequests": icon_reqs,
+                "iconStatus": icon_status,
                 "favicon404Present": has_favicon_404,
-                "phase": "Round 2 / CODE_FROZEN 后 / 关闭中性化（favicon_204=False）",
-                "note": ("修复前：站点未提供 favicon，浏览器自动请求 /favicon.ico "
-                         "返回 404 + console error（见 supplementary_findings.json SF-05 "
-                         "与 preflight 归档 BR-29）。修复后：index.html 增加 "
-                         "<link rel=\"icon\" href=\"data:,\">，浏览器不再发起该请求；"
-                         "本用例在原始服务上严格断言零 404 / 零 console error，"
-                         "不再依赖任何中性化豁免。"),
+                "phase": "Round 7 / v02 书法体图标已接入 / 关闭中性化（favicon_204=False）",
+                "note": ("历史：站点无图标时浏览器自动请求 /favicon.ico 得 404（SF-05）；"
+                         "Round 2 用 data:, 抑制请求以保零 404；本轮用户授权接入 v02 "
+                         "favicon.ico + SVG + apple-touch-icon，图标按需加载且必须全部 "
+                         "200。断言从「零请求」改为「请求存在且全部 200」，"
+                         "零 404 / 零 error 的严格口径不变，不依赖任何中性化豁免。"),
             }
-            s.check("BR-29", "A6 严格口径（关闭中性化）：favicon 修复后全流程零 404 / 零 console error",
+            s.check("BR-29", "A6 严格口径（关闭中性化）：真实图标按需加载全部 200、零 404 / 零 error",
                     "A6 / NFR-01 / P0-07",
                     strict_a6,
                     "favicon_204=False 原始服务上 console=0, pageerror=0, 4xx=0, "
-                    "favicon 请求=0, 敏感头=0",
-                    "strict=%s console=%d pageerror=%d 4xx=%s faviconReqs=%s"
+                    "requestFailed=0, 图标请求≥1 且全部 200, 敏感头=0",
+                    "strict=%s console=%d pageerror=%d 4xx=%s requestFailed=%d "
+                    "iconStatus=%s"
                     % (strict_a6, len(ev.console_errors), len(ev.page_errors),
                        json.dumps(ev.http_errors, ensure_ascii=False)[:200],
-                       favicon_reqs[:2]),
+                       len(ev.request_failed),
+                       json.dumps(icon_status, ensure_ascii=False)[:300]),
                     environment="Chrome / 原始静态服务（无中性化）")
             s.artifacts["favicon404Present"] = has_favicon_404
         finally:
