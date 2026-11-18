@@ -3,6 +3,15 @@
 本项目的版本号以 `data/audio-sources.json` 的 `version` 表示**曲库清单版本**（由健康脚本原子递增），
 站点代码本身按本文件的日期条目记录。
 
+## 2026-11-18 · 接入 v02 书法体「静」图标 + QA 口径演进
+
+- **接入真实站点图标**，替换原先抑制请求的 `<link rel="icon" href="data:,">`：`favicon.ico`（16/32/48 多尺寸）、`stillwave-jing-circle.svg`（书法体「静」，任意尺寸）、`apple-touch-icon.png`（180×180，iOS 主屏）。三个文件从 `stillwave-web-icon-kit-v02` 图标包逐字节复制，不改动源文件；`index.html` 的 `<head>` 按图标包提供的片段以 `./` 相对路径引用，`file://` 与 Pages 子路径均可用。
+- **16px favicon 采用涟漪符号**：图标包固定使用 MaShanZheng 书法体真实轮廓，但 16px 下复杂汉字会糊成墨点，故小尺寸 favicon 改用高辨识度的涟漪符号；SVG 与 iOS 图标仍保留书法体「静」。SVG 无脚本、无外部引用。
+- **BR-29 口径演进（非放宽）**：断言目标由「零图标请求」改为「真实图标被浏览器采用、按需加载全部 200，且零 404 / 零 console error / 零 pageerror / 零敏感头 / 零 requestFailed」。新增对去重后的每个图标 URL 主动 GET 以正向确认状态码（harness 只记录 ≥400 响应，「无 http_errors」不足以证明图标可取）。走完「注入 404 → 变红 → 还原 → 复绿」灵敏度验证。
+- **修复 QA 脚本的仓库布局同步**：BR-29 新口径最初只改在工作区 `qa/test_browser.py`，发布仓库 `stillwave/qa/test_browser.py` 仍是旧口径；已同步两文件为逐字节一致，避免仓库内门禁与实际验收不一致。
+- 验收：全量 **119 用例 / 109 正式断言全部通过 / 0 失败 / 10 未验证**，`ROUTE: NoOne`；线上真实浏览器端到端 10/10 通过；线上三图标 HTTP 200 且 SHA-256 与本地逐字节一致。
+- 不变项：站点代码仍为 **15 个源文件**（3 个图标位于仓库根、不计入静态发布子树契约），纯静态零构建、无新依赖、无新网络请求（图标为浏览器按需请求）、`file://` 与 GitHub Pages 子路径双兼容。
+
 ## 2026-11-13 · 全面审计：2 个缺陷修复 + 键盘/焦点收口（P0-4b）
 
 - **修复「打开别人的分享链接会永久覆写你的本地偏好」**：`player.applyMix()` 内部经 `applySceneConfigOnly / applyScene / setMasterVolume / syncSlots` 四条路径调用 `store.savePrefs()`，导致"读一条链接"被当成"用户改了自己的设置"。新增 `store.holdPrefs() / releasePrefs()`（计数式挂起，`savePrefs()` 挂起期间只改内存、不回写 `sw.prefs.v1`），`restoreFromHash()` 用 `try/finally` 把整个还原过程包住。语义：**分享链接只对本次会话生效**，访问者此后自己的操作照常持久化。
